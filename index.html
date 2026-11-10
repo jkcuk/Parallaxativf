@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Misfeedback: Camera–Projector Feedback Experiment</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='40' fill='%23101010'/%3E%3C/svg%3E">
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+}
+</script>
+
+<style>
+body{
+    margin:0;
+    overflow:hidden;
+    background:black;
+    font-family:sans-serif;
+}
+
+canvas{
+    position:fixed;
+    inset:0;
+    display:block;
+}
+
+#ui{
+    position:absolute;
+    top:10px;
+    left:10px;
+    padding:10px;
+    background:rgba(255,255,255,0.9);
+    border-radius:8px;
+    z-index:1;
+}
+
+#capturePreview{
+    position:fixed;
+    right:12px;
+    bottom:12px;
+    width:min(240px, calc(100vw - 24px), calc(100vh - 24px));
+    aspect-ratio:1;
+    box-sizing:border-box;
+    border:2px solid white;
+    box-shadow:0 2px 10px rgba(0,0,0,0.6);
+    z-index:1;
+    cursor:pointer;
+    pointer-events:auto;
+}
+
+#capturePreview label{
+    position:absolute;
+    top:6px;
+    left:6px;
+    padding:4px 6px;
+    margin:0;
+    color:white;
+    background:rgba(0,0,0,0.65);
+    border-radius:3px;
+    font-size:12px;
+}
+
+label{
+    display:block;
+    margin-bottom:6px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+    <label>
+        Baseline:
+        <input id="baseline"
+               type="range"
+               min="-4"
+               max="4"
+               value="2.0"
+               step="0.01">
+        <span id="baselineValue">2.00</span>
+    </label>
+    <label>
+        Previous image factor (a):
+        <input id="previousFactor"
+               type="range"
+               min="0"
+               max="1"
+               value="0.0"
+               step="0.01">
+        <span id="previousFactorValue">0.00</span>
+    </label>
+    <label>
+        Current image factor (b):
+        <input id="currentFactor"
+               type="range"
+               min="0"
+               max="1"
+               value="1.0"
+               step="0.01">
+        <span id="currentFactorValue">1.00</span>
+    </label>
+    <!-- <button id="resetFeedback" type="button">Re-project initial noise</button> -->
+</div>
+
+<div id="capturePreview"
+     role="button"
+     tabindex="0"
+     aria-label="Switch to capture camera view">
+    <label id="previewLabel">Camera</label>
+</div>
+
+<script type="module">
+
+import * as THREE from "three";
+import {OrbitControls} from "three/addons/controls/OrbitControls.js";
+
+///////////////////////////////////////////////////////////////////////////
+// renderer
+///////////////////////////////////////////////////////////////////////////
+
+const renderer = new THREE.WebGLRenderer({
+    antialias:true
+});
+
+renderer.setSize(
+    window.innerWidth,
+    window.innerHeight
+);
+
+document.body.appendChild(renderer.domElement);
+
+///////////////////////////////////////////////////////////////////////////
+// scene
+///////////////////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x101010);
+
+///////////////////////////////////////////////////////////////////////////
+// observer camera
+///////////////////////////////////////////////////////////////////////////
+
+const observerCamera =
+    new THREE.PerspectiveCamera(
+        50,
+        window.innerWidth/window.innerHeight,
+        0.1,
+        100
+    );
+
+observerCamera.position.set(6,4,-10);
+observerCamera.lookAt(0,0,15);
+
+const controls =
+    new OrbitControls(
+        observerCamera,
+        renderer.domElement
+    );
+
+controls.target.set(0,0,15);
+controls.update();
+
+///////////////////////////////////////////////////////////////////////////
+// capture camera
+///////////////////////////////////////////////////////////////////////////
+
+const captureCamera =
+    new THREE.PerspectiveCamera(
+        50,
+        1,
+        0.1,
+        100
+    );
+
+captureCamera.position.set(0.5,0,0);
+
+const captureDisplayCamera =
+    new THREE.PerspectiveCamera(
+        captureCamera.fov,
+        window.innerWidth/window.innerHeight,
+        captureCamera.near,
+        captureCamera.far
+    );
+
+const observerPreviewCamera =
+    new THREE.PerspectiveCamera(
+        observerCamera.fov,
+        1,
+        observerCamera.near,
+        observerCamera.far
+    );
+
+///////////////////////////////////////////////////////////////////////////
+// projector
+///////////////////////////////////////////////////////////////////////////
+
+const projector =
+    new THREE.PerspectiveCamera(
+        50,
+        1,
+        0.1,
+        100
+    );
+
+projector.position.set(-0.5,0,0);
+
+///////////////////////////////////////////////////////////////////////////
+// reference plane A
+///////////////////////////////////////////////////////////////////////////
+
+const zA = 20;
+
+///////////////////////////////////////////////////////////////////////////
+// feedback buffers
+///////////////////////////////////////////////////////////////////////////
+
+const SIZE = 1024;
+
+let previousCameraTarget =
+    new THREE.WebGLRenderTarget(SIZE, SIZE);
+
+let currentCameraTarget =
+    new THREE.WebGLRenderTarget(SIZE, SIZE);
+
+const projectedTarget =
+    new THREE.WebGLRenderTarget(SIZE, SIZE);
+
+///////////////////////////////////////////////////////////////////////////
+// seed texture
+///////////////////////////////////////////////////////////////////////////
+
+const seedData = new Uint8Array(SIZE*SIZE*4);
+const seedCells = new Uint8Array(64*64);
+let randomState = 0x12345678;
+
+for(let i=0;i<seedCells.length;i++)
+{
+    randomState =
+        (Math.imul(randomState,1664525) + 1013904223) >>> 0;
+    seedCells[i] =
+        48 + (randomState >>> 24) * 207 / 255;
+}
+
+for(let y=0;y<SIZE;y++)
+{
+    for(let x=0;x<SIZE;x++)
+    {
+        const value =
+            seedCells[(y >> 4)*64 + (x >> 4)];
+        const i =
+            (y*SIZE + x)*4;
+
+        seedData[i] = value;
+        seedData[i+1] = value;
+        seedData[i+2] = value;
+        seedData[i+3] = 255;
+    }
+}
+
+const seedTexture =
+    new THREE.DataTexture(
+        seedData,
+        SIZE,
+        SIZE,
+        THREE.RGBAFormat
+    );
+
+seedTexture.magFilter = THREE.LinearFilter;
+seedTexture.minFilter = THREE.LinearFilter;
+seedTexture.needsUpdate = true;
+
+let previousCameraTexture = seedTexture;
+
+///////////////////////////////////////////////////////////////////////////
+// additive feedback projection
+///////////////////////////////////////////////////////////////////////////
+
+const projectionUniforms = {
+    previousFrame: {
+        value: seedTexture
+    },
+    currentFrame: {
+        value: seedTexture
+    },
+    previousFactor: {
+        value: 0.5
+    },
+    currentFactor: {
+        value: 1
+    }
+};
+
+const projectionMaterial =
+    new THREE.ShaderMaterial({
+        uniforms: projectionUniforms,
+        vertexShader:`
+            varying vec2 vUv;
+
+            void main()
+            {
+                vUv = uv;
+                gl_Position = vec4(position, 1.0);
+            }
+        `,
+        fragmentShader:`
+            uniform sampler2D previousFrame;
+            uniform sampler2D currentFrame;
+            uniform float previousFactor;
+            uniform float currentFactor;
+
+            varying vec2 vUv;
+
+            void main()
+            {
+                vec3 previous =
+                    texture2D(previousFrame, vUv).rgb;
+                vec3 current =
+                    texture2D(currentFrame, vUv).rgb;
+
+                gl_FragColor = vec4(
+                    previousFactor * previous +
+                    currentFactor * current,
+                    1.0
+                );
+            }
+        `
+    });
+
+const projectionScene = new THREE.Scene();
+projectionScene.add(
+    new THREE.Mesh(
+        new THREE.PlaneGeometry(2, 2),
+        projectionMaterial
+    )
+);
+
+const projectionCamera =
+    new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+///////////////////////////////////////////////////////////////////////////
+// shader
+///////////////////////////////////////////////////////////////////////////
+
+const uniforms = {
+
+    feedbackTex :
+    {
+        value : seedTexture
+    },
+
+    projectorViewMatrix :
+    {
+        value : new THREE.Matrix4()
+    },
+
+    projectorProjectionMatrix :
+    {
+        value : projector.projectionMatrix
+    },
+
+};
+
+function createFeedbackMaterial(side = THREE.FrontSide)
+{
+    return new THREE.ShaderMaterial({
+
+        uniforms,
+        side,
+
+        vertexShader:`
+
+            varying vec3 vWorldPos;
+
+            void main()
+            {
+                vec4 wp =
+                    modelMatrix *
+                    vec4(position,1.0);
+
+                vWorldPos = wp.xyz;
+
+                gl_Position =
+                    projectionMatrix *
+                    modelViewMatrix *
+                    vec4(position,1.0);
+            }
+        `,
+
+        fragmentShader:`
+
+            uniform sampler2D feedbackTex;
+            uniform mat4 projectorViewMatrix;
+            uniform mat4 projectorProjectionMatrix;
+
+            varying vec3 vWorldPos;
+
+            void main()
+            {
+                vec4 projectorClip =
+                    projectorProjectionMatrix *
+                    projectorViewMatrix *
+                    vec4(vWorldPos,1.0);
+
+                vec2 uv =
+                    projectorClip.xy /
+                    max(projectorClip.w, 0.00001) *
+                    0.5 +
+                    0.5;
+
+                if(
+                    projectorClip.w <= 0.0 ||
+                    uv.x < 0.0 ||
+                    uv.x > 1.0 ||
+                    uv.y < 0.0 ||
+                    uv.y > 1.0
+                ){
+                    gl_FragColor = vec4(0.015, 0.015, 0.015, 1.0);
+                } else {
+                    gl_FragColor = texture2D(feedbackTex, uv);
+                }
+            }
+        `
+    });
+}
+
+///////////////////////////////////////////////////////////////////////////
+// scene geometry
+///////////////////////////////////////////////////////////////////////////
+
+const box =
+    new THREE.Mesh(
+        new THREE.BoxGeometry(5,5,5),
+        createFeedbackMaterial()
+    );
+
+box.position.set(-3,-5,20);
+box.rotation.set(0.3,0.5,0.2);
+
+scene.add(box);
+
+const sphere =
+    new THREE.Mesh(
+        new THREE.SphereGeometry(
+            5,
+            64,
+            64
+        ),
+        createFeedbackMaterial()
+    );
+
+sphere.position.set(
+        2,
+        2,
+        22
+    );
+
+scene.add(sphere);
+
+const planeA =
+    new THREE.Mesh(
+        new THREE.PlaneGeometry(24,24),
+        createFeedbackMaterial(THREE.DoubleSide)
+    );
+
+planeA.position.z = zA;
+
+scene.add(planeA);
+
+function createRandomTexture(seed)
+{
+    const size = 256;
+    const data = new Uint8Array(0.2*size*size*4);
+    let state = seed;
+
+    for(let i=0;i<data.length;i+=4)
+    {
+        state =
+            (Math.imul(state,1664525) + 1013904223) >>> 0;
+        data[i] = state >>> 24;
+        data[i+1] = (state >>> 16) & 0xff;
+        data[i+2] = (state >>> 8) & 0xff;
+        data[i+3] = 255;
+    }
+
+    const texture =
+        new THREE.DataTexture(
+            data,
+            0.2*size,
+            size,
+            THREE.RGBAFormat
+        );
+
+    texture.magFilter = THREE.NearestFilter;
+    texture.minFilter = THREE.NearestFilter;
+    texture.needsUpdate = true;
+    return texture;
+}
+
+const objectTextureMaterial =
+    seed => new THREE.MeshBasicMaterial({
+        map:createRandomTexture(seed),
+        side:THREE.DoubleSide
+    });
+
+const panelHeight =
+    2 * zA * Math.tan(
+        THREE.MathUtils.degToRad(captureCamera.fov * 0.5)
+    );
+const panelWidth = panelHeight * captureCamera.aspect * 0.5;
+
+const leftTexturedObject =
+    new THREE.Mesh(
+        new THREE.PlaneGeometry(0.3*panelWidth,panelHeight),
+        objectTextureMaterial(0x13579bdf)
+    );
+
+leftTexturedObject.position.set(
+    -panelWidth*0.5,
+    0,
+    zA-0.05
+);
+scene.add(leftTexturedObject);
+
+// const rightTexturedObject =
+//     new THREE.Mesh(
+//         new THREE.PlaneGeometry(0.3*panelWidth,panelHeight),
+//         objectTextureMaterial(0x2468ace0)
+//     );
+
+// rightTexturedObject.position.set(
+//     panelWidth*0.5,
+//     0,
+//     zA-0.05
+// );
+// scene.add(rightTexturedObject);
+
+///////////////////////////////////////////////////////////////////////////
+// visualise camera/projector
+///////////////////////////////////////////////////////////////////////////
+
+const cameraMarker =
+    new THREE.Mesh(
+        new THREE.SphereGeometry(0.08,16,16),
+        new THREE.MeshBasicMaterial({
+            color:0x00ff00
+        })
+    );
+
+scene.add(cameraMarker);
+
+const projectorMarker =
+    new THREE.Mesh(
+        new THREE.SphereGeometry(0.08,16,16),
+        new THREE.MeshBasicMaterial({
+            color:0xff0000
+        })
+    );
+
+scene.add(projectorMarker);
+
+function createCameraLabel(text, color)
+{
+    const canvas =
+        document.createElement("canvas");
+    const context =
+        canvas.getContext("2d");
+
+    canvas.width = 512;
+    canvas.height = 128;
+    context.fillStyle = "rgba(0, 0, 0, 0.75)";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.font = "bold 48px sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillStyle = color;
+    context.fillText(text, canvas.width/2, canvas.height/2);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const label = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+            map: texture,
+            transparent: true,
+            depthTest: false,
+            depthWrite: false
+        })
+    );
+
+    label.scale.set(1.6, 0.4, 1);
+    label.layers.set(1);
+    return label;
+}
+
+const cameraLabel =
+    createCameraLabel("Camera", "#66ff66");
+const projectorLabel =
+    createCameraLabel("Projector", "#ff6666");
+
+scene.add(cameraLabel, projectorLabel);
+observerCamera.layers.enable(1);
+observerPreviewCamera.layers.enable(1);
+
+///////////////////////////////////////////////////////////////////////////
+// baseline UI
+///////////////////////////////////////////////////////////////////////////
+
+const baselineSlider =
+    document.getElementById("baseline");
+
+const baselineValue =
+    document.getElementById("baselineValue");
+
+const previousFactorSlider =
+    document.getElementById("previousFactor");
+
+const previousFactorValue =
+    document.getElementById("previousFactorValue");
+
+const currentFactorSlider =
+    document.getElementById("currentFactor");
+
+const currentFactorValue =
+    document.getElementById("currentFactorValue");
+
+// const resetFeedbackButton =
+//     document.getElementById("resetFeedback");
+
+const capturePreview =
+    document.getElementById("capturePreview");
+
+const previewLabel =
+    document.getElementById("previewLabel");
+
+let captureIsMain = false;
+
+function toggleMainCamera()
+{
+    captureIsMain = !captureIsMain;
+    previewLabel.textContent =
+        captureIsMain ? "Observer camera" : "Camera";
+    capturePreview.setAttribute(
+        "aria-label",
+        captureIsMain
+            ? "Switch to observer camera view"
+            : "Switch to camera view"
+    );
+}
+
+capturePreview.addEventListener(
+    "click",
+    toggleMainCamera
+);
+
+capturePreview.addEventListener(
+    "keydown",
+    event =>
+    {
+        if(event.key === "Enter" || event.key === " ")
+        {
+            event.preventDefault();
+            toggleMainCamera();
+        }
+    }
+);
+
+function updateBaseline()
+{
+    const b =
+        parseFloat(
+            baselineSlider.value
+        );
+
+    baselineValue.textContent =
+        b.toFixed(2);
+
+    captureCamera.position.x =
+        +b*0.5;
+
+    captureCamera.lookAt(
+        captureCamera.position.x,
+        0,
+        1
+    );
+
+    leftTexturedObject.position.x =
+        captureCamera.position.x + panelWidth*0.85;
+    // rightTexturedObject.position.x =
+    //     captureCamera.position.x - panelWidth*0.85;
+
+    projector.position.x =
+        -b*0.5;
+
+    projector.lookAt(
+        projector.position.x,
+        0,
+        1
+    );
+
+    cameraMarker.position.copy(
+        captureCamera.position
+    );
+
+    projectorMarker.position.copy(
+        projector.position
+    );
+
+    cameraLabel.position.copy(cameraMarker.position);
+    cameraLabel.position.y += 0.35;
+    projectorLabel.position.copy(projectorMarker.position);
+    projectorLabel.position.y += 0.35;
+
+    projector.updateMatrixWorld();
+    uniforms.projectorViewMatrix.value.copy(
+        projector.matrixWorldInverse
+    );
+}
+
+function updatePreviousFactor()
+{
+    const factor =
+        parseFloat(previousFactorSlider.value);
+
+    previousFactorValue.textContent =
+        factor.toFixed(2);
+    projectionUniforms.previousFactor.value =
+        factor;
+}
+
+function updateCurrentFactor()
+{
+    const factor =
+        parseFloat(currentFactorSlider.value);
+
+    currentFactorValue.textContent =
+        factor.toFixed(2);
+    projectionUniforms.currentFactor.value =
+        factor;
+}
+
+baselineSlider.addEventListener(
+    "input",
+    updateBaseline
+);
+
+updateBaseline();
+
+previousFactorSlider.addEventListener(
+    "input",
+    updatePreviousFactor
+);
+
+updatePreviousFactor();
+
+currentFactorSlider.addEventListener(
+    "input",
+    updateCurrentFactor
+);
+
+updateCurrentFactor();
+
+// let resetFeedbackRequested = false;
+
+// const resetFeedbackButton =
+//     document.getElementById("resetFeedback");
+
+// resetFeedbackButton.addEventListener(
+//     "click",
+//     () =>
+//     {
+//         resetFeedbackRequested = true;
+//     }
+// );
+
+///////////////////////////////////////////////////////////////////////////
+// animation
+///////////////////////////////////////////////////////////////////////////
+
+function animate()
+{
+    requestAnimationFrame(animate);
+
+    // if(resetFeedbackRequested)
+    // {
+    //     previousCameraTexture = seedTexture;
+    //     uniforms.feedbackTex.value = seedTexture;
+    //     resetFeedbackRequested = false;
+    // }
+
+    renderer.setRenderTarget(currentCameraTarget);
+    renderer.clear();
+    renderer.render(
+        scene,
+        captureCamera
+    );
+
+    projectionUniforms.previousFrame.value =
+        previousCameraTexture;
+    projectionUniforms.currentFrame.value =
+        currentCameraTarget.texture;
+    renderer.setRenderTarget(projectedTarget);
+    renderer.clear();
+    renderer.render(
+        projectionScene,
+        projectionCamera
+    );
+
+    previousCameraTexture =
+        currentCameraTarget.texture;
+    const spareCameraTarget =
+        previousCameraTarget;
+    previousCameraTarget =
+        currentCameraTarget;
+    currentCameraTarget =
+        spareCameraTarget;
+    uniforms.feedbackTex.value =
+        projectedTarget.texture;
+
+    renderer.setRenderTarget(null);
+    renderer.setScissorTest(false);
+    renderer.setViewport(
+        0,
+        0,
+        window.innerWidth,
+        window.innerHeight
+    );
+
+    captureDisplayCamera.position.copy(captureCamera.position);
+    captureDisplayCamera.quaternion.copy(captureCamera.quaternion);
+    captureDisplayCamera.aspect =
+        window.innerWidth/window.innerHeight;
+    captureDisplayCamera.updateProjectionMatrix();
+
+    const mainCamera =
+        captureIsMain ? captureDisplayCamera : observerCamera;
+    const previewCamera =
+        captureIsMain ? observerPreviewCamera : captureCamera;
+
+    renderer.render(scene, mainCamera);
+
+    const previewBounds =
+        capturePreview.getBoundingClientRect();
+    const previewX =
+        previewBounds.left + 2;
+    const previewY =
+        window.innerHeight - previewBounds.bottom + 2;
+    const previewWidth =
+        previewBounds.width - 4;
+    const previewHeight =
+        previewBounds.height - 4;
+
+    if(captureIsMain)
+    {
+        observerPreviewCamera.position.copy(observerCamera.position);
+        observerPreviewCamera.quaternion.copy(observerCamera.quaternion);
+        observerPreviewCamera.aspect =
+            previewWidth/previewHeight;
+        observerPreviewCamera.updateProjectionMatrix();
+    }
+
+    renderer.setScissorTest(true);
+    renderer.setViewport(
+        previewX,
+        previewY,
+        previewWidth,
+        previewHeight
+    );
+    renderer.setScissor(
+        previewX,
+        previewY,
+        previewWidth,
+        previewHeight
+    );
+    renderer.render(scene, previewCamera);
+    renderer.setScissorTest(false);
+
+    controls.update();
+}
+
+animate();
+
+///////////////////////////////////////////////////////////////////////////
+// resize
+///////////////////////////////////////////////////////////////////////////
+
+window.addEventListener(
+    "resize",
+    () =>
+    {
+        observerCamera.aspect =
+            window.innerWidth /
+            window.innerHeight;
+
+        observerCamera.updateProjectionMatrix();
+
+        renderer.setSize(
+            window.innerWidth,
+            window.innerHeight
+        );
+    }
+);
+
+</script>
+
+</body>
+</html>
