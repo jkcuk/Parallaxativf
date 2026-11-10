@@ -37,9 +37,92 @@ canvas{
     z-index:1;
 }
 
+#ui > summary,
+#sceneEditor > summary{
+    cursor:pointer;
+    font-weight:bold;
+}
+
+#ui > summary{
+    min-width:150px;
+}
+
+#ui[open] > summary{
+    margin-bottom:10px;
+}
+
+#sceneEditor{
+    position:absolute;
+    top:10px;
+    right:10px;
+    width:min(270px, calc(100vw - 20px));
+    box-sizing:border-box;
+    padding:12px;
+    background:rgba(255,255,255,0.92);
+    border-radius:8px;
+    z-index:1;
+}
+
+#sceneEditor > summary{
+    font-size:16px;
+}
+
+#sceneEditor[open] > summary{
+    margin-bottom:10px;
+}
+
+#sceneEditor select,
+#sceneEditor button{
+    box-sizing:border-box;
+    min-height:30px;
+    padding:4px 6px;
+}
+
+#sceneEditor select{
+    width:100%;
+}
+
+.editorActions{
+    display:flex;
+    gap:6px;
+    margin:8px 0;
+}
+
+.editorActions select{
+    flex:1;
+    min-width:0;
+}
+
+.editorActions button{
+    flex:1;
+}
+
+.transformRow{
+    display:grid;
+    grid-template-columns:48px repeat(3, 1fr);
+    align-items:center;
+    gap:4px;
+    margin-top:6px;
+    font-size:12px;
+}
+
+.transformRow input{
+    box-sizing:border-box;
+    width:100%;
+    min-width:0;
+    padding:4px;
+}
+
+#editorHint{
+    min-height:1em;
+    margin:8px 0 0;
+    color:#444;
+    font-size:12px;
+}
+
 #capturePreview{
     position:fixed;
-    right:12px;
+    left:12px;
     bottom:12px;
     width:min(240px, calc(100vw - 24px), calc(100vh - 24px));
     aspect-ratio:1;
@@ -72,7 +155,8 @@ label{
 
 <body>
 
-<div id="ui">
+<details id="ui" open>
+    <summary>Experiment controls</summary>
     <label>
         Baseline:
         <input id="baseline"
@@ -104,7 +188,49 @@ label{
         <span id="currentFactorValue">1.00</span>
     </label>
     <!-- <button id="resetFeedback" type="button">Re-project initial noise</button> -->
-</div>
+</details>
+
+<details id="sceneEditor" open>
+    <summary>Scene editor</summary>
+    <div class="editorActions">
+        <select id="newObjectType" aria-label="New object type">
+            <option value="box">Box</option>
+            <option value="sphere">Sphere</option>
+            <option value="plane">Plane</option>
+            <option value="cylinder">Cylinder</option>
+        </select>
+        <button id="addObject" type="button">Add object</button>
+    </div>
+    <label for="sceneObjects">Scene objects</label>
+    <select id="sceneObjects" size="4" aria-label="Scene objects"></select>
+    <div class="editorActions">
+        <button id="deleteObject" type="button">Delete selected</button>
+    </div>
+    <div class="editorActions" aria-label="Transform mode">
+        <button type="button" data-transform-mode="translate">Move</button>
+        <button type="button" data-transform-mode="rotate">Rotate</button>
+        <button type="button" data-transform-mode="scale">Scale</button>
+    </div>
+    <div class="transformRow">
+        <span>Position</span>
+        <input data-transform="position" data-axis="x" type="number" step="0.1" aria-label="Position X">
+        <input data-transform="position" data-axis="y" type="number" step="0.1" aria-label="Position Y">
+        <input data-transform="position" data-axis="z" type="number" step="0.1" aria-label="Position Z">
+    </div>
+    <div class="transformRow">
+        <span>Rotation</span>
+        <input data-transform="rotation" data-axis="x" type="number" step="1" aria-label="Rotation X in degrees">
+        <input data-transform="rotation" data-axis="y" type="number" step="1" aria-label="Rotation Y in degrees">
+        <input data-transform="rotation" data-axis="z" type="number" step="1" aria-label="Rotation Z in degrees">
+    </div>
+    <div class="transformRow">
+        <span>Scale</span>
+        <input data-transform="scale" data-axis="x" type="number" min="0.01" step="0.1" aria-label="Scale X">
+        <input data-transform="scale" data-axis="y" type="number" min="0.01" step="0.1" aria-label="Scale Y">
+        <input data-transform="scale" data-axis="z" type="number" min="0.01" step="0.1" aria-label="Scale Z">
+    </div>
+    <p id="editorHint" aria-live="polite">Select an object to edit it.</p>
+</details>
 
 <div id="capturePreview"
      role="button"
@@ -117,6 +243,7 @@ label{
 
 import * as THREE from "three";
 import {OrbitControls} from "three/addons/controls/OrbitControls.js";
+import {TransformControls} from "three/addons/controls/TransformControls.js";
 
 ///////////////////////////////////////////////////////////////////////////
 // renderer
@@ -164,6 +291,30 @@ const controls =
 controls.target.set(0,0,15);
 controls.update();
 
+const transformControls =
+    new TransformControls(
+        observerCamera,
+        renderer.domElement
+    );
+function setObjectLayer(object, layer)
+{
+    object.layers?.set(layer);
+    object.children?.forEach(
+        child => setObjectLayer(child, layer)
+    );
+}
+
+setObjectLayer(transformControls, 1);
+scene.add(transformControls);
+
+transformControls.addEventListener(
+    "dragging-changed",
+    event =>
+    {
+        controls.enabled = !event.value;
+    }
+);
+
 ///////////////////////////////////////////////////////////////////////////
 // capture camera
 ///////////////////////////////////////////////////////////////////////////
@@ -171,7 +322,7 @@ controls.update();
 const captureCamera =
     new THREE.PerspectiveCamera(
         50,
-        1,
+        window.innerWidth/window.innerHeight,
         0.1,
         100
     );
@@ -201,7 +352,7 @@ const observerPreviewCamera =
 const projector =
     new THREE.PerspectiveCamera(
         50,
-        1,
+        window.innerWidth/window.innerHeight,
         0.1,
         100
     );
@@ -220,14 +371,40 @@ const zA = 20;
 
 const SIZE = 1024;
 
+function getFeedbackTargetSize()
+{
+    const aspect =
+        window.innerWidth/window.innerHeight;
+    const scale =
+        Math.min(1, 1/aspect);
+    const height =
+        Math.max(1, Math.round(SIZE*scale));
+    const width =
+        Math.max(1, Math.round(height*aspect));
+
+    return {width, height};
+}
+
+const feedbackTargetSize =
+    getFeedbackTargetSize();
+
 let previousCameraTarget =
-    new THREE.WebGLRenderTarget(SIZE, SIZE);
+    new THREE.WebGLRenderTarget(
+        feedbackTargetSize.width,
+        feedbackTargetSize.height
+    );
 
 let currentCameraTarget =
-    new THREE.WebGLRenderTarget(SIZE, SIZE);
+    new THREE.WebGLRenderTarget(
+        feedbackTargetSize.width,
+        feedbackTargetSize.height
+    );
 
 const projectedTarget =
-    new THREE.WebGLRenderTarget(SIZE, SIZE);
+    new THREE.WebGLRenderTarget(
+        feedbackTargetSize.width,
+        feedbackTargetSize.height
+    );
 
 ///////////////////////////////////////////////////////////////////////////
 // seed texture
@@ -521,9 +698,318 @@ const leftTexturedObject =
 leftTexturedObject.position.set(
     -panelWidth*0.5,
     0,
-    zA-0.05
+    zA-0.01
 );
 scene.add(leftTexturedObject);
+
+///////////////////////////////////////////////////////////////////////////
+// scene editor
+///////////////////////////////////////////////////////////////////////////
+
+const editableObjects = new Map();
+const sceneObjectsSelect =
+    document.getElementById("sceneObjects");
+const editorHint =
+    document.getElementById("editorHint");
+let selectedObject = null;
+let nextObjectNumber = 1;
+
+function registerEditableObject(object, name)
+{
+    object.userData.editorName = name;
+    editableObjects.set(object.uuid, object);
+
+    const option =
+        document.createElement("option");
+    option.value = object.uuid;
+    option.textContent = name;
+    sceneObjectsSelect.appendChild(option);
+}
+
+function updateTransformFields(object)
+{
+    if(!object)
+    {
+        document
+            .querySelectorAll("[data-transform]")
+            .forEach(input => input.value = "");
+        return;
+    }
+
+    const transforms = {
+        position: object.position,
+        rotation: {
+            x: THREE.MathUtils.radToDeg(object.rotation.x),
+            y: THREE.MathUtils.radToDeg(object.rotation.y),
+            z: THREE.MathUtils.radToDeg(object.rotation.z)
+        },
+        scale: object.scale
+    };
+
+    document
+        .querySelectorAll("[data-transform]")
+        .forEach(input =>
+        {
+            const value =
+                transforms[input.dataset.transform][input.dataset.axis];
+            input.value = value.toFixed(2);
+        });
+}
+
+function selectEditableObject(object)
+{
+    selectedObject = object;
+    if(object)
+    {
+        transformControls.attach(object);
+        sceneObjectsSelect.value = object.uuid;
+        editorHint.textContent =
+            `${object.userData.editorName} selected. Drag the gizmo or edit the values.`;
+    }
+    else
+    {
+        transformControls.detach();
+        sceneObjectsSelect.selectedIndex = -1;
+        editorHint.textContent = "Select an object to edit it.";
+    }
+    updateTransformFields(object);
+}
+
+[box, sphere, planeA, leftTexturedObject].forEach(
+    (object, index) =>
+    {
+        const name = [
+            "Box",
+            "Sphere",
+            "Reference plane",
+            "Image panel"
+        ][index];
+        registerEditableObject(object, name);
+    }
+);
+sceneObjectsSelect.selectedIndex = -1;
+
+sceneObjectsSelect.addEventListener(
+    "change",
+    () =>
+    {
+        selectEditableObject(
+            editableObjects.get(sceneObjectsSelect.value) || null
+        );
+    }
+);
+
+document
+    .querySelectorAll("[data-transform-mode]")
+    .forEach(button =>
+    {
+        button.addEventListener(
+            "click",
+            () => transformControls.setMode(button.dataset.transformMode)
+        );
+    });
+
+transformControls.addEventListener(
+    "objectChange",
+    () =>
+    {
+        if(selectedObject === leftTexturedObject)
+        {
+            selectedObject.userData.manuallyPositioned = true;
+        }
+        updateTransformFields(selectedObject);
+    }
+);
+
+document
+    .querySelectorAll("[data-transform]")
+    .forEach(input =>
+    {
+        input.addEventListener(
+            "change",
+            () =>
+            {
+                if(!selectedObject || input.value === "")
+                {
+                    return;
+                }
+
+                const value = Number(input.value);
+                if(!Number.isFinite(value))
+                {
+                    updateTransformFields(selectedObject);
+                    return;
+                }
+
+                const {transform, axis} = input.dataset;
+                if(transform === "rotation")
+                {
+                    selectedObject.rotation[axis] =
+                        THREE.MathUtils.degToRad(value);
+                }
+                else if(transform === "scale")
+                {
+                    selectedObject.scale[axis] = Math.max(0.01, value);
+                }
+                else
+                {
+                    selectedObject.position[axis] = value;
+                    if(selectedObject === leftTexturedObject)
+                    {
+                        selectedObject.userData.manuallyPositioned = true;
+                    }
+                }
+                selectedObject.updateMatrixWorld();
+                updateTransformFields(selectedObject);
+            }
+        );
+    });
+
+document
+    .getElementById("addObject")
+    .addEventListener(
+        "click",
+        () =>
+        {
+            const type =
+                document.getElementById("newObjectType").value;
+            let geometry;
+            let name;
+            let materialSide = THREE.FrontSide;
+
+            if(type === "sphere")
+            {
+                geometry = new THREE.SphereGeometry(1, 32, 24);
+                name = "Sphere";
+            }
+            else if(type === "plane")
+            {
+                geometry = new THREE.PlaneGeometry(4, 4);
+                name = "Plane";
+                materialSide = THREE.DoubleSide;
+            }
+            else if(type === "cylinder")
+            {
+                geometry = new THREE.CylinderGeometry(1, 1, 2, 32);
+                name = "Cylinder";
+            }
+            else
+            {
+                geometry = new THREE.BoxGeometry(2, 2, 2);
+                name = "Box";
+            }
+
+            const object =
+                new THREE.Mesh(
+                    geometry,
+                    createFeedbackMaterial(materialSide)
+                );
+            object.position.set(0, 0, zA);
+            name = `${name} ${nextObjectNumber++}`;
+            scene.add(object);
+            registerEditableObject(object, name);
+            selectEditableObject(object);
+        }
+    );
+
+document
+    .getElementById("deleteObject")
+    .addEventListener(
+        "click",
+        () =>
+        {
+            if(!selectedObject)
+            {
+                editorHint.textContent = "Select an object before deleting it.";
+                return;
+            }
+
+            const object = selectedObject;
+            const option =
+                [...sceneObjectsSelect.options]
+                    .find(item => item.value === object.uuid);
+            object.removeFromParent();
+            object.geometry.dispose();
+            object.material.dispose();
+            editableObjects.delete(object.uuid);
+            option?.remove();
+            selectEditableObject(null);
+        }
+    );
+
+let pointerDownPosition = null;
+renderer.domElement.addEventListener(
+    "pointerdown",
+    event =>
+    {
+        if(event.button !== 0 ||
+            event.target !== renderer.domElement ||
+            event.clientX > window.innerWidth - 300)
+        {
+            pointerDownPosition = null;
+            return;
+        }
+        pointerDownPosition = {
+            x: event.clientX,
+            y: event.clientY
+        };
+    }
+);
+
+const editorRaycaster = new THREE.Raycaster();
+const editorPointer = new THREE.Vector2();
+renderer.domElement.addEventListener(
+    "pointerup",
+    event =>
+    {
+        if(!pointerDownPosition ||
+            transformControls.dragging ||
+            Math.hypot(
+                event.clientX - pointerDownPosition.x,
+                event.clientY - pointerDownPosition.y
+            ) > 5)
+        {
+            pointerDownPosition = null;
+            return;
+        }
+        pointerDownPosition = null;
+
+        const bounds =
+            renderer.domElement.getBoundingClientRect();
+        editorPointer.set(
+            (event.clientX - bounds.left)/bounds.width*2 - 1,
+            -((event.clientY - bounds.top)/bounds.height)*2 + 1
+        );
+        const viewCamera =
+            captureIsMain ? captureDisplayCamera : observerCamera;
+        editorRaycaster.setFromCamera(editorPointer, viewCamera);
+        const hits =
+            editorRaycaster.intersectObjects(
+                [...editableObjects.values()],
+                false
+            );
+        const hit =
+            hits.find(intersection => intersection.object !== planeA) ||
+            hits[0];
+        selectEditableObject(hit?.object || null);
+    }
+);
+
+document.addEventListener(
+    "keydown",
+    event =>
+    {
+        if((event.key === "Delete" || event.key === "Backspace") &&
+            selectedObject &&
+            !["INPUT", "SELECT", "TEXTAREA"].includes(
+                document.activeElement.tagName
+            ))
+        {
+            event.preventDefault();
+            document.getElementById("deleteObject").click();
+        }
+    }
+);
 
 // const rightTexturedObject =
 //     new THREE.Mesh(
@@ -686,7 +1172,9 @@ function updateBaseline()
     );
 
     leftTexturedObject.position.x =
-        captureCamera.position.x + panelWidth*0.85;
+        leftTexturedObject.userData.manuallyPositioned
+            ? leftTexturedObject.position.x
+            : captureCamera.position.x + panelWidth*0.75;
     // rightTexturedObject.position.x =
     //     captureCamera.position.x - panelWidth*0.85;
 
@@ -889,11 +1377,33 @@ window.addEventListener(
     "resize",
     () =>
     {
-        observerCamera.aspect =
-            window.innerWidth /
-            window.innerHeight;
+        const aspect =
+            window.innerWidth/window.innerHeight;
 
+        observerCamera.aspect =
+            aspect;
         observerCamera.updateProjectionMatrix();
+
+        captureCamera.aspect = aspect;
+        captureCamera.updateProjectionMatrix();
+
+        projector.aspect = aspect;
+        projector.updateProjectionMatrix();
+
+        const targetSize =
+            getFeedbackTargetSize();
+        previousCameraTarget.setSize(
+            targetSize.width,
+            targetSize.height
+        );
+        currentCameraTarget.setSize(
+            targetSize.width,
+            targetSize.height
+        );
+        projectedTarget.setSize(
+            targetSize.width,
+            targetSize.height
+        );
 
         renderer.setSize(
             window.innerWidth,
