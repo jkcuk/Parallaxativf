@@ -101,6 +101,12 @@ canvas{
     flex:1;
 }
 
+#sceneEditor [data-transform-mode][aria-pressed="true"]{
+    color:white;
+    background:#2459a6;
+    border-color:#17427f;
+}
+
 #leftPanelEditor{
     margin:10px 0;
     padding-top:8px;
@@ -232,6 +238,12 @@ label{
 <details id="ui" open>
     <summary>Experiment controls</summary>
     <label>
+        <input id="projectorEnabled"
+               type="checkbox"
+               checked>
+        Projector on
+    </label>
+    <label>
         Baseline:
         <input id="baseline"
                type="range"
@@ -311,9 +323,9 @@ label{
         </div>
     </div>
     <div class="editorActions" aria-label="Transform mode">
-        <button type="button" data-transform-mode="translate">Move</button>
-        <button type="button" data-transform-mode="rotate">Rotate</button>
-        <button type="button" data-transform-mode="scale">Scale</button>
+        <button type="button" data-transform-mode="translate" aria-pressed="false">Move</button>
+        <button type="button" data-transform-mode="rotate" aria-pressed="false">Rotate</button>
+        <button type="button" data-transform-mode="scale" aria-pressed="false">Scale</button>
     </div>
     <div class="transformRow" id="transformPositionRow">
         <span>Position</span>
@@ -510,6 +522,24 @@ document
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x101010);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+
+const lightingTarget = new THREE.Object3D();
+lightingTarget.position.set(0, 0, 20);
+scene.add(lightingTarget);
+
+[
+    {position: [-8, 10, -5], intensity: 2},
+    {position: [8, 5, 32], intensity: 1.2},
+    {position: [0, -8, 24], intensity: 0.8}
+].forEach(({position, intensity}) =>
+{
+    const light = new THREE.DirectionalLight(0xffffff, intensity);
+    light.position.set(...position);
+    light.target = lightingTarget;
+    scene.add(light);
+});
 
 ///////////////////////////////////////////////////////////////////////////
 // observer camera
@@ -844,6 +874,43 @@ function createFeedbackMaterial(side = THREE.FrontSide)
     });
 }
 
+let projectorOn = true;
+const projectorObjects = new Set();
+
+function registerProjectorObject(object)
+{
+    const onMaterial = object.material;
+    const offMaterial =
+        new THREE.MeshPhongMaterial({
+            color: 0xffffff,
+            side: onMaterial.side,
+            shininess: 60
+        });
+
+    object.userData.projectorOnMaterial = onMaterial;
+    object.userData.projectorOffMaterial = offMaterial;
+    projectorObjects.add(object);
+
+    if(!projectorOn)
+    {
+        object.material = offMaterial;
+    }
+}
+
+function setProjectorEnabled(enabled)
+{
+    projectorOn = enabled;
+    projectorObjects.forEach(
+        object =>
+        {
+            object.material =
+                enabled
+                    ? object.userData.projectorOnMaterial
+                    : object.userData.projectorOffMaterial;
+        }
+    );
+}
+
 ///////////////////////////////////////////////////////////////////////////
 // scene geometry
 ///////////////////////////////////////////////////////////////////////////
@@ -858,6 +925,7 @@ box.position.set(-3,-5,20);
 box.rotation.set(0.3,0.5,0.2);
 
 scene.add(box);
+registerProjectorObject(box);
 
 const sphere =
     new THREE.Mesh(
@@ -876,6 +944,7 @@ sphere.position.set(
     );
 
 scene.add(sphere);
+registerProjectorObject(sphere);
 
 const planeA =
     new THREE.Mesh(
@@ -886,6 +955,7 @@ const planeA =
 planeA.position.z = zA;
 
 scene.add(planeA);
+registerProjectorObject(planeA);
 
 function createRandomTexture(seed)
 {
@@ -1337,10 +1407,40 @@ document
 const editableObjects = new Map();
 const sceneObjectsSelect =
     document.getElementById("sceneObjects");
+const projectorToggle =
+    document.getElementById("projectorEnabled");
 const editorHint =
     document.getElementById("editorHint");
 let selectedObject = null;
 let nextObjectNumber = 1;
+let transformEditingEnabled = true;
+const transformModeButtons =
+    [...document.querySelectorAll("[data-transform-mode]")];
+
+function updateTransformModeButtons()
+{
+    const activeMode =
+        transformEditingEnabled && selectedObject
+            ? transformControls.getMode()
+            : null;
+
+    transformModeButtons.forEach(
+        button =>
+        {
+            button.setAttribute(
+                "aria-pressed",
+                String(button.dataset.transformMode === activeMode)
+            );
+        }
+    );
+
+    editorHint.textContent =
+        selectedObject
+            ? transformEditingEnabled
+                ? `${selectedObject.userData.editorName} selected. Drag the gizmo or edit the values.`
+                : `${selectedObject.userData.editorName} selected. Gizmo hidden; click a transform button to enable it.`
+            : "Select an object to edit it.";
+}
 
 function registerEditableObject(object, name)
 {
@@ -1402,17 +1502,22 @@ function selectEditableObject(object)
 
     if(object)
     {
-        transformControls.attach(object);
+        if(transformEditingEnabled)
+        {
+            transformControls.attach(object);
+        }
+        else
+        {
+            transformControls.detach();
+        }
         sceneObjectsSelect.value = object.uuid;
-        editorHint.textContent =
-            `${object.userData.editorName} selected. Drag the gizmo or edit the values.`;
     }
     else
     {
         transformControls.detach();
         sceneObjectsSelect.selectedIndex = -1;
-        editorHint.textContent = "Select an object to edit it.";
     }
+    updateTransformModeButtons();
     updateTransformFields(object);
     if(isLeftPanel)
     {
@@ -1444,15 +1549,38 @@ sceneObjectsSelect.addEventListener(
 );
 selectEditableObject(sphere);
 
-document
-    .querySelectorAll("[data-transform-mode]")
-    .forEach(button =>
+transformModeButtons.forEach(
+    button =>
     {
         button.addEventListener(
             "click",
-            () => transformControls.setMode(button.dataset.transformMode)
+            () =>
+            {
+                const mode = button.dataset.transformMode;
+                const isActiveMode =
+                    transformEditingEnabled &&
+                    transformControls.getMode() === mode;
+
+                if(isActiveMode)
+                {
+                    transformEditingEnabled = false;
+                    transformControls.detach();
+                }
+                else
+                {
+                    transformEditingEnabled = true;
+                    transformControls.setMode(mode);
+                    if(selectedObject)
+                    {
+                        transformControls.attach(selectedObject);
+                    }
+                }
+
+                updateTransformModeButtons();
+            }
         );
-    });
+    }
+);
 
 transformControls.addEventListener(
     "objectChange",
@@ -1554,6 +1682,7 @@ document
                     geometry,
                     createFeedbackMaterial(materialSide)
                 );
+            registerProjectorObject(object);
             object.position.set(0, 0, zA);
             name = `${name} ${nextObjectNumber++}`;
             scene.add(object);
@@ -1580,7 +1709,15 @@ document
                     .find(item => item.value === object.uuid);
             object.removeFromParent();
             object.geometry.dispose();
-            object.material.dispose();
+            if(projectorObjects.delete(object))
+            {
+                object.userData.projectorOnMaterial.dispose();
+                object.userData.projectorOffMaterial.dispose();
+            }
+            else
+            {
+                object.material.dispose();
+            }
             editableObjects.delete(object.uuid);
             option?.remove();
             selectEditableObject(null);
@@ -1761,6 +1898,11 @@ const currentFactorSlider =
 const currentFactorValue =
     document.getElementById("currentFactorValue");
 
+projectorToggle.addEventListener(
+    "change",
+    () => setProjectorEnabled(projectorToggle.checked)
+);
+
 // const resetFeedbackButton =
 //     document.getElementById("resetFeedback");
 
@@ -1927,34 +2069,37 @@ function animate()
     //     resetFeedbackRequested = false;
     // }
 
-    renderer.setRenderTarget(currentCameraTarget);
-    renderer.clear();
-    renderer.render(
-        scene,
-        captureCamera
-    );
+    if(projectorOn)
+    {
+        renderer.setRenderTarget(currentCameraTarget);
+        renderer.clear();
+        renderer.render(
+            scene,
+            captureCamera
+        );
 
-    projectionUniforms.previousFrame.value =
-        previousCameraTexture;
-    projectionUniforms.currentFrame.value =
-        currentCameraTarget.texture;
-    renderer.setRenderTarget(projectedTarget);
-    renderer.clear();
-    renderer.render(
-        projectionScene,
-        projectionCamera
-    );
+        projectionUniforms.previousFrame.value =
+            previousCameraTexture;
+        projectionUniforms.currentFrame.value =
+            currentCameraTarget.texture;
+        renderer.setRenderTarget(projectedTarget);
+        renderer.clear();
+        renderer.render(
+            projectionScene,
+            projectionCamera
+        );
 
-    previousCameraTexture =
-        currentCameraTarget.texture;
-    const spareCameraTarget =
-        previousCameraTarget;
-    previousCameraTarget =
-        currentCameraTarget;
-    currentCameraTarget =
-        spareCameraTarget;
-    uniforms.feedbackTex.value =
-        projectedTarget.texture;
+        previousCameraTexture =
+            currentCameraTarget.texture;
+        const spareCameraTarget =
+            previousCameraTarget;
+        previousCameraTarget =
+            currentCameraTarget;
+        currentCameraTarget =
+            spareCameraTarget;
+        uniforms.feedbackTex.value =
+            projectedTarget.texture;
+    }
 
     renderer.setRenderTarget(null);
     renderer.setScissorTest(false);
