@@ -1224,6 +1224,315 @@ function createHeadObject()
     return head;
 }
 
+function createPotatoHead(radius = 1) {
+
+    const potatoHead = new THREE.Group();
+
+    //
+    // Materials
+    //
+
+    const skinMat = new THREE.MeshPhongMaterial({
+        color: 0xe0c090,
+        shininess: 100
+    });
+
+    const blueMat = new THREE.MeshPhongMaterial({
+        color: 0x2060ff
+    });
+
+    const blackMat = new THREE.MeshPhongMaterial({
+        color: 0x101010
+    });
+
+    const lipMat = new THREE.MeshPhongMaterial({
+        color: 0xdd2020,
+        shininess: 100
+    });
+
+    const whiteMat = new THREE.MeshPhongMaterial({
+        color: 0xffffff
+    });
+
+    //
+    // Head
+    //
+
+    const head = new THREE.Mesh(
+        new THREE.SphereGeometry(radius, 64, 32),
+         createFeedbackMaterial() // skinMat
+    );
+    potatoHead.add(head);
+    registerProjectorObject(head);
+
+    //
+    // Cap top
+    //
+
+    const capTop = new THREE.Mesh(
+        new THREE.SphereGeometry(
+            1.03 * radius,
+            32,
+            16,
+            0,
+            2 * Math.PI,
+            0,
+            0.34 * Math.PI
+        ),
+        createFeedbackMaterial()    // blueMat
+    );
+
+    capTop.position.set(
+        0 * radius, // 0.1736 * radius,
+        0 * radius, // 0.6333 * radius,
+        0 * radius // -0.5468 * radius
+    );
+
+    capTop.quaternion.setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        new THREE.Vector3(
+            0.1677,
+            0.9513,
+            0.2588
+        ).normalize()
+    );
+
+    potatoHead.add(capTop);
+    registerProjectorObject(capTop);
+
+    //
+    // Visor
+    //
+
+    const visor = new THREE.Mesh(
+        new THREE.CylinderGeometry(
+            0.7 * radius,
+            0.7 * radius,
+            0.05 * radius,
+            32
+        ),
+        createFeedbackMaterial() // blueMat
+    );
+
+    visor.position.set(
+        0.1736 * radius,
+        0.6333 * radius,
+        -0.5468 * radius
+    );
+
+    const visorNormal = new THREE.Vector3(
+        0.1677,
+        0.9513,
+        0.2588
+    ).normalize();
+
+    visor.quaternion.setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        visorNormal
+    );
+
+    potatoHead.add(visor);
+    registerProjectorObject(visor);
+    //
+    // Nose
+    //
+
+    const nose = new THREE.Mesh(
+        new THREE.SphereGeometry(0.2 * radius, 32, 16),
+        createFeedbackMaterial() // skinMat
+    );
+
+    nose.position.set(
+        0,
+        0,
+        -1.0 * radius
+    );
+
+    potatoHead.add(nose);
+    registerProjectorObject(nose);
+    //
+    // Eyes
+    //
+
+    function makeEye(position) {
+
+        const eye = new THREE.Group();
+
+        const eyeball = new THREE.Mesh(
+            new THREE.SphereGeometry(0.15 * radius, 32, 16),
+            createFeedbackMaterial() // whiteMat
+        );
+
+        eye.add(eyeball);
+        registerProjectorObject(eyeball);
+
+        const pupil = new THREE.Mesh(
+            new THREE.SphereGeometry(0.05 * radius, 16, 16),
+            createFeedbackMaterial() // blackMat
+        );
+
+        pupil.position.z = -0.12 * radius;
+        eye.add(pupil);
+        registerProjectorObject(pupil);
+
+        eye.position.copy(position);
+
+        return eye;
+    }
+
+    potatoHead.add(
+        makeEye(
+            new THREE.Vector3(
+                -0.25 * radius,
+                 0.25 * radius,
+                -0.9 * radius
+            )
+        )
+    );
+
+    potatoHead.add(
+        makeEye(
+            new THREE.Vector3(
+                 0.25 * radius,
+                 0.25 * radius,
+                -0.9 * radius
+            )
+        )
+    );
+
+    //
+    // Helper for lips and eyebrows
+    //
+
+    function cylinderBetween(p1, p2, r, material) {
+
+        const dir = new THREE.Vector3().subVectors(p2, p1);
+        const len = dir.length();
+
+        const mesh = new THREE.Mesh(
+            new THREE.CylinderGeometry(r, r, len, 16),
+             createFeedbackMaterial() // material
+        );
+
+        mesh.position.copy(
+            new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5)
+        );
+
+        mesh.quaternion.setFromUnitVectors(
+            new THREE.Vector3(0, 1, 0),
+            dir.normalize()
+        );
+
+        registerProjectorObject(mesh);
+        return mesh;
+    }
+
+    //
+    // Eyebrows
+    //
+
+    potatoHead.add(
+        cylinderBetween(
+            new THREE.Vector3(
+                -0.45 * radius,
+                 0.50 * radius,
+                -0.85 * radius
+            ),
+            new THREE.Vector3(
+                -0.05 * radius,
+                 0.55 * radius,
+                -0.90 * radius
+            ),
+            0.025 * radius,
+            createFeedbackMaterial() // blackMat
+        )
+    );
+
+    potatoHead.add(
+        cylinderBetween(
+                 new THREE.Vector3(
+                 0.45 * radius,
+                 0.50 * radius,
+                -0.85 * radius
+            ),
+            new THREE.Vector3(
+                 0.05 * radius,
+                 0.55 * radius,
+                -0.90 * radius
+            ),
+            0.025 * radius,
+            blackMat
+        )
+    );
+
+    //
+    // Lips
+    //
+
+    potatoHead.add(
+        cylinderBetween(
+            new THREE.Vector3(
+                -0.33 * radius,
+                -0.25 * radius,
+                -1.0 * radius
+            ),
+            new THREE.Vector3(
+                 0.33 * radius,
+                -0.25 * radius,
+                -1.0 * radius
+            ),
+            0.05 * radius,
+            lipMat
+        )
+    );
+
+    potatoHead.add(
+        cylinderBetween(
+            new THREE.Vector3(
+                -0.33 * radius,
+                -0.35 * radius,
+                -1.0 * radius
+            ),
+            new THREE.Vector3(
+                 0.33 * radius,
+                -0.35 * radius,
+                -1.0 * radius
+            ),
+            0.05 * radius,
+            lipMat
+        )
+    );
+
+    //
+    // Ears
+    //
+
+    function makeEar(x) {
+
+        const ear = new THREE.Mesh(
+            new THREE.CircleGeometry(
+                0.2 * radius,
+                32
+            ),
+            createFeedbackMaterial(THREE.DoubleSide) // skinMat
+        );
+
+        ear.position.set(
+            x * radius,
+            0,
+            0
+        );
+
+        registerProjectorObject(ear);
+        return ear;
+    }
+
+    potatoHead.add(makeEar(-1));
+    potatoHead.add(makeEar(+1));
+
+    return potatoHead;
+}
+
 function setProjectorEnabled(enabled)
 {
     if(enabled && !projectorOn)
@@ -1259,7 +1568,7 @@ function setProjectorEnabled(enabled)
 // scene geometry
 ///////////////////////////////////////////////////////////////////////////
 
-const initialHead = createHeadObject();
+const initialHead = createPotatoHead(5);// createHeadObject();
 initialHead.position.set(0, 0, 22);
 scene.add(initialHead);
 
@@ -1269,7 +1578,7 @@ const plane =
         createFeedbackMaterial(THREE.DoubleSide)
     );
 
-plane.position.z = 20;
+plane.position.z = 30;
 
 scene.add(plane);
 registerProjectorObject(plane);
