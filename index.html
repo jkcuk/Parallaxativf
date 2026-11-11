@@ -32,6 +32,9 @@ canvas{
     top:10px;
     left:10px;
     padding:10px;
+    box-sizing:border-box;
+    max-height:calc(100vh - 20px);
+    overflow-y:auto;
     background:rgba(255,255,255,0.9);
     border-radius:8px;
     z-index:1;
@@ -125,10 +128,6 @@ canvas{
 
 #leftPanelEditor .transformRow{
     grid-template-columns:48px repeat(3, 1fr);
-}
-
-#leftPanelEditor .sizeRow{
-    grid-template-columns:42px minmax(0, 1fr) 46px minmax(0, 1fr);
 }
 
 #textureStatus{
@@ -243,6 +242,38 @@ label{
                checked>
         Projector on
     </label>
+    <fieldset>
+        <legend>Projector source</legend>
+        <label>
+            <input type="radio"
+                   name="projectorSource"
+                   value="camera"
+                   checked>
+            Camera image (video feedback)
+        </label>
+        <label>
+            <input type="radio"
+                   name="projectorSource"
+                   value="texture">
+            Texture
+        </label>
+    </fieldset>
+    <label for="leftTextureType">Texture (shared with image panel):</label>
+    <select id="leftTextureType">
+        <option value="random">Random</option>
+        <option value="checker">Checkerboard</option>
+        <option value="stripes">Stripes</option>
+        <option value="dots">Square dot grid</option>
+        <option value="gradient">Gradient</option>
+        <option value="image">Image file...</option>
+        <option value="camera">Device camera</option>
+    </select>
+    <input id="textureImageFile"
+           type="file"
+           accept="image/*"
+           aria-label="Choose image texture"
+           hidden>
+    <p id="textureStatus" aria-live="polite">Using random texture.</p>
     <label>
         Feedback frame delay:
         <input id="feedbackFrameDelay"
@@ -294,6 +325,7 @@ label{
             <option value="sphere">Sphere</option>
             <option value="plane">Plane</option>
             <option value="cylinder">Cylinder</option>
+            <option value="head">Head</option>
         </select>
         <button id="addObject" type="button">Add object</button>
     </div>
@@ -302,40 +334,20 @@ label{
     <div class="editorActions">
         <button id="deleteObject" type="button">Delete selected</button>
     </div>
+    <div class="editorActions" aria-label="Transform mode">
+        <button type="button" data-transform-mode="translate" aria-pressed="false">Move</button>
+        <button type="button" data-transform-mode="rotate" aria-pressed="false">Rotate</button>
+        <button type="button" data-transform-mode="scale" aria-pressed="false">Scale</button>
+    </div>
     <div id="leftPanelEditor" hidden>
         <strong>Image panel settings</strong>
-        <label for="leftTextureType">Texture</label>
-        <select id="leftTextureType">
-            <option value="random">Random</option>
-            <option value="checker">Checkerboard</option>
-            <option value="stripes">Stripes</option>
-            <option value="gradient">Gradient</option>
-            <option value="image">Image file...</option>
-            <option value="camera">Device camera</option>
-        </select>
-        <input id="textureImageFile"
-               type="file"
-               accept="image/*"
-               aria-label="Choose image texture"
-               hidden>
-        <p id="textureStatus" aria-live="polite">Using random texture.</p>
+        <p>Uses the shared texture selected in Experiment controls.</p>
         <div class="transformRow">
             <span>Position</span>
             <input data-panel-position="x" type="number" step="0.1" aria-label="Image panel position X">
             <input data-panel-position="y" type="number" step="0.1" aria-label="Image panel position Y">
             <input data-panel-position="z" type="number" step="0.1" aria-label="Image panel position Z">
         </div>
-        <div class="transformRow sizeRow">
-            <span>Width</span>
-            <input id="leftPanelWidth" type="number" min="0.01" step="0.1" aria-label="Image panel width">
-            <span>Height</span>
-            <input id="leftPanelHeight" type="number" min="0.01" step="0.1" aria-label="Image panel height">
-        </div>
-    </div>
-    <div class="editorActions" aria-label="Transform mode">
-        <button type="button" data-transform-mode="translate" aria-pressed="false">Move</button>
-        <button type="button" data-transform-mode="rotate" aria-pressed="false">Rotate</button>
-        <button type="button" data-transform-mode="scale" aria-pressed="false">Scale</button>
     </div>
     <div class="transformRow" id="transformPositionRow">
         <span>Position</span>
@@ -609,6 +621,9 @@ const captureCamera =
 
 captureCamera.position.set(0.5,0,0);
 
+const capturePreviewCamera =
+    captureCamera.clone();
+
 const captureDisplayCamera =
     new THREE.PerspectiveCamera(
         captureCamera.fov,
@@ -643,7 +658,7 @@ projector.position.set(-0.5,0,0);
 // reference plane A
 ///////////////////////////////////////////////////////////////////////////
 
-const zA = 20;
+const zA = 10;
 
 ///////////////////////////////////////////////////////////////////////////
 // feedback buffers
@@ -715,8 +730,17 @@ const projectionUniforms = {
     previousFrame: {
         value: seedTexture
     },
+    previousFrameTransform: {
+        value: new THREE.Matrix3()
+    },
     currentFrame: {
         value: seedTexture
+    },
+    currentFrameTransform: {
+        value: new THREE.Matrix3()
+    },
+    textureMode: {
+        value: 0
     },
     previousFactor: {
         value: 0.5
@@ -725,6 +749,9 @@ const projectionUniforms = {
         value: 1
     }
 };
+
+const projectionTextureTransform =
+    new THREE.Matrix3();
 
 const projectionMaterial =
     new THREE.ShaderMaterial({
@@ -740,7 +767,10 @@ const projectionMaterial =
         `,
         fragmentShader:`
             uniform sampler2D previousFrame;
+            uniform mat3 previousFrameTransform;
             uniform sampler2D currentFrame;
+            uniform mat3 currentFrameTransform;
+            uniform float textureMode;
             uniform float previousFactor;
             uniform float currentFactor;
 
@@ -749,15 +779,22 @@ const projectionMaterial =
             void main()
             {
                 vec3 previous =
-                    texture2D(previousFrame, vUv).rgb;
+                    texture2D(
+                        previousFrame,
+                        (previousFrameTransform * vec3(vUv, 1.0)).xy
+                    ).rgb;
                 vec3 current =
-                    texture2D(currentFrame, vUv).rgb;
+                    texture2D(
+                        currentFrame,
+                        (currentFrameTransform * vec3(vUv, 1.0)).xy
+                    ).rgb;
 
-                gl_FragColor = vec4(
-                    previousFactor * previous +
-                    currentFactor * current,
-                    1.0
-                );
+                vec3 projected =
+                    textureMode > 0.5
+                        ? current
+                        : previousFactor * previous +
+                            currentFactor * current;
+                gl_FragColor = vec4(projected, 1.0);
             }
         `
     });
@@ -883,6 +920,65 @@ function registerProjectorObject(object)
     }
 }
 
+function createHeadObject()
+{
+    const head = new THREE.Group();
+    head.rotation.y = Math.PI;
+    head.scale.setScalar(10);
+    const parts = [
+        {
+            geometry: new THREE.SphereGeometry(0.75, 32, 24),
+            position: [0, 0, 0],
+            scale: [1, 1.2, 0.8]
+        },
+        {
+            geometry: new THREE.SphereGeometry(0.18, 20, 16),
+            position: [-0.77, -0.02, 0],
+            scale: [0.65, 1.2, 0.8]
+        },
+        {
+            geometry: new THREE.SphereGeometry(0.18, 20, 16),
+            position: [0.77, -0.02, 0],
+            scale: [0.65, 1.2, 0.8]
+        },
+        {
+            geometry: new THREE.SphereGeometry(0.1, 20, 16),
+            position: [-0.27, 0.15, 0.56]
+        },
+        {
+            geometry: new THREE.SphereGeometry(0.1, 20, 16),
+            position: [0.27, 0.15, 0.56]
+        },
+        {
+            geometry: new THREE.SphereGeometry(0.12, 20, 16),
+            position: [0, -0.12, 0.62],
+            scale: [0.75, 1.2, 0.8]
+        },
+        {
+            geometry: new THREE.BoxGeometry(0.34, 0.055, 0.04),
+            position: [0, -0.39, 0.57]
+        }
+    ];
+
+    for(const part of parts)
+    {
+        const mesh =
+            new THREE.Mesh(
+                part.geometry,
+                createFeedbackMaterial()
+            );
+        mesh.position.set(...part.position);
+        if(part.scale)
+        {
+            mesh.scale.set(...part.scale);
+        }
+        head.add(mesh);
+        registerProjectorObject(mesh);
+    }
+
+    return head;
+}
+
 function setProjectorEnabled(enabled)
 {
     if(enabled && !projectorOn)
@@ -918,47 +1014,20 @@ function setProjectorEnabled(enabled)
 // scene geometry
 ///////////////////////////////////////////////////////////////////////////
 
-const box =
-    new THREE.Mesh(
-        new THREE.BoxGeometry(5,5,5),
-        createFeedbackMaterial()
-    );
+const initialHead = createHeadObject();
+initialHead.position.set(0, 0, 22);
+scene.add(initialHead);
 
-box.position.set(-3,-5,20);
-box.rotation.set(0.3,0.5,0.2);
-
-scene.add(box);
-registerProjectorObject(box);
-
-const sphere =
-    new THREE.Mesh(
-        new THREE.SphereGeometry(
-            5,
-            64,
-            64
-        ),
-        createFeedbackMaterial()
-    );
-
-sphere.position.set(
-        2,
-        2,
-        22
-    );
-
-scene.add(sphere);
-registerProjectorObject(sphere);
-
-const planeA =
+const plane =
     new THREE.Mesh(
         new THREE.PlaneGeometry(24,24),
         createFeedbackMaterial(THREE.DoubleSide)
     );
 
-planeA.position.z = zA;
+plane.position.z = 20;
 
-scene.add(planeA);
-registerProjectorObject(planeA);
+scene.add(plane);
+registerProjectorObject(plane);
 
 function createRandomTexture(seed)
 {
@@ -1024,17 +1093,19 @@ function getTextureAspect(texture)
 
 const leftTexturedObject =
     new THREE.Mesh(
-        new THREE.PlaneGeometry(
-            panelHeight*getTextureAspect(initialPanelMaterial.map),
-            panelHeight
-        ),
+        new THREE.PlaneGeometry(1, 1),
         initialPanelMaterial
     );
 
+leftTexturedObject.scale.set(
+    panelHeight*getTextureAspect(initialPanelMaterial.map),
+    panelHeight,
+    1
+);
 leftTexturedObject.position.set(
     -panelWidth*0.5,
     0,
-    zA-0.01
+    zA
 );
 scene.add(leftTexturedObject);
 
@@ -1042,10 +1113,6 @@ const leftTextureSelect =
     document.getElementById("leftTextureType");
 const leftPanelEditor =
     document.getElementById("leftPanelEditor");
-const leftPanelWidthInput =
-    document.getElementById("leftPanelWidth");
-const leftPanelHeightInput =
-    document.getElementById("leftPanelHeight");
 const textureImageFile =
     document.getElementById("textureImageFile");
 const textureStatus =
@@ -1093,14 +1160,6 @@ function updateLeftPanelTextureCrop(texture)
 
 function updateLeftPanelEditorFields()
 {
-    const geometry = leftTexturedObject.geometry;
-    leftPanelWidthInput.value =
-        (geometry.parameters.width *
-            Math.abs(leftTexturedObject.scale.x)).toFixed(2);
-    leftPanelHeightInput.value =
-        (geometry.parameters.height *
-            Math.abs(leftTexturedObject.scale.y)).toFixed(2);
-
     document
         .querySelectorAll("[data-panel-position]")
         .forEach(input =>
@@ -1109,30 +1168,6 @@ function updateLeftPanelEditorFields()
                 leftTexturedObject.position[input.dataset.panelPosition]
                     .toFixed(2);
         });
-}
-
-function setLeftPanelSize(changedDimension, value)
-{
-    if(!Number.isFinite(value) || value <= 0)
-    {
-        updateLeftPanelEditorFields();
-        return;
-    }
-
-    const width =
-        changedDimension === "width"
-            ? value/Math.abs(leftTexturedObject.scale.x)
-            : leftTexturedObject.geometry.parameters.width;
-    const height =
-        changedDimension === "height"
-            ? value/Math.abs(leftTexturedObject.scale.y)
-            : leftTexturedObject.geometry.parameters.height;
-    const previousGeometry = leftTexturedObject.geometry;
-    leftTexturedObject.geometry =
-        new THREE.PlaneGeometry(width, height);
-    previousGeometry.dispose();
-    updateLeftPanelEditorFields();
-    updateLeftPanelTextureCrop(leftTexturedObject.material.map);
 }
 
 function stopTextureStream(stream = leftTextureStream)
@@ -1199,6 +1234,23 @@ function createPatternTexture(pattern)
             context.rotate(-Math.PI/4);
             context.fillRect(0, -size, 20, size*3);
             context.restore();
+        }
+    }
+    else if(pattern === "dots")
+    {
+        const spacing = 6.4;
+        const radius = 0.8;
+        context.fillStyle = "#f5f5f5";
+        context.fillRect(0, 0, size, size);
+        context.fillStyle = "#222222";
+        for(let y=spacing/2;y<size;y+=spacing)
+        {
+            for(let x=spacing/2;x<size;x+=spacing)
+            {
+                context.beginPath();
+                context.arc(x, y, radius, 0, Math.PI*2);
+                context.fill();
+            }
         }
     }
     else
@@ -1371,15 +1423,6 @@ window.addEventListener(
     }
 );
 
-leftPanelWidthInput.addEventListener(
-    "change",
-    () => setLeftPanelSize("width", Number(leftPanelWidthInput.value))
-);
-leftPanelHeightInput.addEventListener(
-    "change",
-    () => setLeftPanelSize("height", Number(leftPanelHeightInput.value))
-);
-
 document
     .querySelectorAll("[data-panel-position]")
     .forEach(input =>
@@ -1412,6 +1455,8 @@ const sceneObjectsSelect =
     document.getElementById("sceneObjects");
 const projectorToggle =
     document.getElementById("projectorEnabled");
+const projectorSourceInputs =
+    [...document.querySelectorAll('input[name="projectorSource"]')];
 const editorHint =
     document.getElementById("editorHint");
 let selectedObject = null;
@@ -1493,15 +1538,6 @@ function selectEditableObject(object)
     const isLeftPanel = object === leftTexturedObject;
     leftPanelEditor.hidden = !isLeftPanel;
     document.getElementById("transformPositionRow").hidden = isLeftPanel;
-    document.getElementById("transformScaleRow").hidden = isLeftPanel;
-    const scaleModeButton =
-        document.querySelector('[data-transform-mode="scale"]');
-    scaleModeButton.hidden = isLeftPanel;
-
-    if(isLeftPanel && transformControls.getMode() === "scale")
-    {
-        transformControls.setMode("translate");
-    }
 
     if(object)
     {
@@ -1528,12 +1564,11 @@ function selectEditableObject(object)
     }
 }
 
-[box, sphere, planeA, leftTexturedObject].forEach(
+[initialHead, plane, leftTexturedObject].forEach(
     (object, index) =>
     {
         const name = [
-            "Box",
-            "Sphere",
+            "Head",
             "Plane",
             "Image panel"
         ][index];
@@ -1550,7 +1585,7 @@ sceneObjectsSelect.addEventListener(
         );
     }
 );
-selectEditableObject(sphere);
+selectEditableObject(initialHead);
 
 transformModeButtons.forEach(
     button =>
@@ -1593,6 +1628,7 @@ transformControls.addEventListener(
         {
             selectedObject.userData.manuallyPositioned = true;
             updateLeftPanelEditorFields();
+            updateLeftPanelTextureCrop(selectedObject.material.map);
         }
         updateTransformFields(selectedObject);
     }
@@ -1641,6 +1677,12 @@ document
                 if(selectedObject === leftTexturedObject)
                 {
                     updateLeftPanelEditorFields();
+                    if(transform === "scale")
+                    {
+                        updateLeftPanelTextureCrop(
+                            selectedObject.material.map
+                        );
+                    }
                 }
             }
         );
@@ -1655,10 +1697,16 @@ document
             const type =
                 document.getElementById("newObjectType").value;
             let geometry;
+            let object;
             let name;
             let materialSide = THREE.FrontSide;
 
-            if(type === "sphere")
+            if(type === "head")
+            {
+                object = createHeadObject();
+                name = "Head";
+            }
+            else if(type === "sphere")
             {
                 geometry = new THREE.SphereGeometry(1, 32, 24);
                 name = "Sphere";
@@ -1680,12 +1728,15 @@ document
                 name = "Box";
             }
 
-            const object =
-                new THREE.Mesh(
-                    geometry,
-                    createFeedbackMaterial(materialSide)
-                );
-            registerProjectorObject(object);
+            if(!object)
+            {
+                object =
+                    new THREE.Mesh(
+                        geometry,
+                        createFeedbackMaterial(materialSide)
+                    );
+                registerProjectorObject(object);
+            }
             object.position.set(0, 0, zA);
             name = `${name} ${nextObjectNumber++}`;
             scene.add(object);
@@ -1711,16 +1762,26 @@ document
                 [...sceneObjectsSelect.options]
                     .find(item => item.value === object.uuid);
             object.removeFromParent();
-            object.geometry.dispose();
-            if(projectorObjects.delete(object))
-            {
-                object.userData.projectorOnMaterial.dispose();
-                object.userData.projectorOffMaterial.dispose();
-            }
-            else
-            {
-                object.material.dispose();
-            }
+            object.traverse(
+                child =>
+                {
+                    if(!child.isMesh)
+                    {
+                        return;
+                    }
+
+                    child.geometry.dispose();
+                    if(projectorObjects.delete(child))
+                    {
+                        child.userData.projectorOnMaterial.dispose();
+                        child.userData.projectorOffMaterial.dispose();
+                    }
+                    else
+                    {
+                        child.material.dispose();
+                    }
+                }
+            );
             editableObjects.delete(object.uuid);
             option?.remove();
             selectEditableObject(null);
@@ -1776,12 +1837,17 @@ renderer.domElement.addEventListener(
         const hits =
             editorRaycaster.intersectObjects(
                 [...editableObjects.values()],
-                false
+                true
             );
         const hit =
-            hits.find(intersection => intersection.object !== planeA) ||
+            hits.find(intersection => intersection.object !== plane) ||
             hits[0];
-        selectEditableObject(hit?.object || null);
+        let object = hit?.object || null;
+        while(object && !editableObjects.has(object.uuid))
+        {
+            object = object.parent;
+        }
+        selectEditableObject(object);
     }
 );
 
@@ -1911,6 +1977,16 @@ projectorToggle.addEventListener(
     () => setProjectorEnabled(projectorToggle.checked)
 );
 
+projectorSourceInputs.forEach(
+    input => input.addEventListener(
+        "change",
+        () =>
+        {
+            lastFeedbackFrameTime = null;
+        }
+    )
+);
+
 // const resetFeedbackButton =
 //     document.getElementById("resetFeedback");
 
@@ -1966,15 +2042,15 @@ function updateBaseline()
         +b*0.5;
 
     captureCamera.lookAt(
-        captureCamera.position.x,
+        0, // captureCamera.position.x,
         0,
-        1
+        zA
     );
 
-    leftTexturedObject.position.x =
-        leftTexturedObject.userData.manuallyPositioned
-            ? leftTexturedObject.position.x
-            : captureCamera.position.x + panelWidth*0.75;
+    // leftTexturedObject.position.x =
+    //     leftTexturedObject.userData.manuallyPositioned
+    //         ? leftTexturedObject.position.x
+    //         : captureCamera.position.x + panelWidth*0.75;
     // rightTexturedObject.position.x =
     //     captureCamera.position.x - panelWidth*0.85;
 
@@ -1982,9 +2058,9 @@ function updateBaseline()
         -b*0.5;
 
     projector.lookAt(
-        projector.position.x,
+        0, // projector.position.x,
         0,
-        1
+        zA
     );
 
     cameraMarker.position.copy(
@@ -2099,17 +2175,55 @@ function animate(timestamp)
     {
         lastFeedbackFrameTime = timestamp;
 
-        renderer.setRenderTarget(currentCameraTarget);
-        renderer.clear();
-        renderer.render(
-            scene,
-            captureCamera
-        );
+        const usePanelTexture =
+            projectorSourceInputs.find(input => input.checked)?.value ===
+                "texture";
+        if(usePanelTexture)
+        {
+            const sourceTexture =
+                leftTexturedObject.material.map;
+            projectionUniforms.currentFrame.value =
+                sourceTexture;
+            const targetAspect =
+                projectedTarget.width/projectedTarget.height;
+            const sourceAspect =
+                getTextureAspect(sourceTexture) || targetAspect;
+            const scaleX =
+                targetAspect < sourceAspect
+                    ? targetAspect/sourceAspect
+                    : 1;
+            const scaleY =
+                targetAspect > sourceAspect
+                    ? sourceAspect/targetAspect
+                    : 1;
+            projectionTextureTransform.set(
+                scaleX, 0, (1 - scaleX)*0.5,
+                0, scaleY, (1 - scaleY)*0.5,
+                0, 0, 1
+            );
+            projectionUniforms.currentFrameTransform.value.copy(
+                projectionTextureTransform
+            );
+            projectionUniforms.textureMode.value = 1;
+        }
+        else
+        {
+            renderer.setRenderTarget(currentCameraTarget);
+            renderer.clear();
+            renderer.render(
+                scene,
+                captureCamera
+            );
 
-        projectionUniforms.previousFrame.value =
-            previousCameraTexture;
-        projectionUniforms.currentFrame.value =
-            currentCameraTarget.texture;
+            projectionUniforms.previousFrame.value =
+                previousCameraTexture;
+            projectionUniforms.previousFrameTransform.value.identity();
+            projectionUniforms.currentFrame.value =
+                currentCameraTarget.texture;
+            projectionUniforms.currentFrameTransform.value.identity();
+            projectionUniforms.textureMode.value = 0;
+        }
+
         renderer.setRenderTarget(projectedTarget);
         renderer.clear();
         renderer.render(
@@ -2117,14 +2231,17 @@ function animate(timestamp)
             projectionCamera
         );
 
-        previousCameraTexture =
-            currentCameraTarget.texture;
-        const spareCameraTarget =
-            previousCameraTarget;
-        previousCameraTarget =
-            currentCameraTarget;
-        currentCameraTarget =
-            spareCameraTarget;
+        if(!usePanelTexture)
+        {
+            previousCameraTexture =
+                currentCameraTarget.texture;
+            const spareCameraTarget =
+                previousCameraTarget;
+            previousCameraTarget =
+                currentCameraTarget;
+            currentCameraTarget =
+                spareCameraTarget;
+        }
         uniforms.feedbackTex.value =
             projectedTarget.texture;
     }
@@ -2147,7 +2264,7 @@ function animate(timestamp)
     const mainCamera =
         captureIsMain ? captureDisplayCamera : observerCamera;
     const previewCamera =
-        captureIsMain ? observerPreviewCamera : captureCamera;
+        captureIsMain ? observerPreviewCamera : capturePreviewCamera;
 
     transformControls.camera = mainCamera;
     renderer.render(scene, mainCamera);
@@ -2175,6 +2292,14 @@ function animate(timestamp)
         observerPreviewCamera.aspect =
             previewWidth/previewHeight;
         observerPreviewCamera.updateProjectionMatrix();
+    }
+    else
+    {
+        capturePreviewCamera.position.copy(captureCamera.position);
+        capturePreviewCamera.quaternion.copy(captureCamera.quaternion);
+        capturePreviewCamera.aspect =
+            previewWidth/previewHeight;
+        capturePreviewCamera.updateProjectionMatrix();
     }
 
     renderer.setScissorTest(true);
