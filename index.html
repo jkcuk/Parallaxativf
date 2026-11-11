@@ -795,6 +795,51 @@ projector.position.set(-0.5,0,0);
 
 const zA = 10;
 
+const autostereogramFrameGeometry =
+    new THREE.BufferGeometry();
+autostereogramFrameGeometry.setAttribute(
+    "position",
+    new THREE.BufferAttribute(new Float32Array(12), 3)
+);
+const autostereogramFrame =
+    new THREE.LineLoop(
+        autostereogramFrameGeometry,
+        new THREE.LineBasicMaterial({
+            color: 0x66ff66,
+            toneMapped: false
+        })
+    );
+autostereogramFrame.layers.set(2);
+scene.add(autostereogramFrame);
+
+function updateAutostereogramFrame()
+{
+    captureCamera.updateMatrixWorld(true);
+    const origin = captureCamera.position;
+    const worldPoint = new THREE.Vector3();
+    const direction = new THREE.Vector3();
+    const position =
+        autostereogramFrameGeometry.getAttribute("position");
+
+    for(let i = 0; i < 4; i++)
+    {
+        const x = i === 0 || i === 3 ? -1 : 1;
+        const y = i < 2 ? -1 : 1;
+        worldPoint.set(x, y, 0.5).unproject(captureCamera);
+        direction.subVectors(worldPoint, origin);
+        const distance = (zA - origin.z)/direction.z;
+        position.setXYZ(
+            i,
+            origin.x + direction.x*distance,
+            origin.y + direction.y*distance,
+            zA - 0.01
+        );
+    }
+
+    position.needsUpdate = true;
+    autostereogramFrameGeometry.computeBoundingSphere();
+}
+
 ///////////////////////////////////////////////////////////////////////////
 // feedback buffers
 ///////////////////////////////////////////////////////////////////////////
@@ -2486,6 +2531,7 @@ function updateBaseline()
         0,
         zA
     );
+    updateAutostereogramFrame();
 
     // leftTexturedObject.position.x =
     //     leftTexturedObject.userData.manuallyPositioned
@@ -2779,6 +2825,7 @@ window.addEventListener(
 
         captureCamera.aspect = aspect;
         captureCamera.updateProjectionMatrix();
+        updateAutostereogramFrame();
 
         projector.aspect = aspect;
         projector.updateProjectionMatrix();
