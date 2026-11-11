@@ -89,6 +89,43 @@ canvas{
     width:100%;
 }
 
+#sceneObjects{
+    max-height:120px;
+    overflow-y:auto;
+    margin:4px 0;
+    border:1px solid #999;
+    border-radius:3px;
+}
+
+.sceneObjectRow{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    min-height:28px;
+    padding:2px 6px;
+}
+
+.sceneObjectRow[data-selected="true"]{
+    color:white;
+    background:#2459a6;
+}
+
+.sceneObjectSelect{
+    flex:1;
+    min-width:0;
+    padding:3px 0;
+    border:0;
+    background:transparent;
+    text-align:left;
+    font:inherit;
+    cursor:pointer;
+}
+
+.sceneObjectVisibility{
+    flex:none;
+    margin:0;
+}
+
 .editorActions{
     display:flex;
     gap:6px;
@@ -110,23 +147,23 @@ canvas{
     border-color:#17427f;
 }
 
-#leftPanelEditor{
+#imagePanelEditor{
     margin:10px 0;
     padding-top:8px;
     border-top:1px solid #bbb;
 }
 
-#leftPanelEditor[hidden]{
+#imagePanelEditor[hidden]{
     display:none;
 }
 
-#leftPanelEditor select,
-#leftPanelEditor input{
+#imagePanelEditor select,
+#imagePanelEditor input{
     width:100%;
     margin-top:4px;
 }
 
-#leftPanelEditor .transformRow{
+#imagePanelEditor .transformRow{
     grid-template-columns:48px repeat(3, 1fr);
 }
 
@@ -238,8 +275,7 @@ label{
     <summary>Experiment controls</summary>
     <label>
         <input id="projectorEnabled"
-               type="checkbox"
-               checked>
+               type="checkbox">
         Projector on
     </label>
     <fieldset>
@@ -258,32 +294,58 @@ label{
             Texture
         </label>
     </fieldset>
-    <label for="leftTextureType">Texture (shared with image panel):</label>
-    <select id="leftTextureType">
-        <option value="random">Random</option>
-        <option value="checker">Checkerboard</option>
-        <option value="stripes">Stripes</option>
-        <option value="dots">Square dot grid</option>
-        <option value="gradient">Gradient</option>
-        <option value="image">Image file...</option>
-        <option value="camera">Device camera</option>
-    </select>
-    <input id="textureImageFile"
-           type="file"
-           accept="image/*"
-           aria-label="Choose image texture"
-           hidden>
-    <p id="textureStatus" aria-live="polite">Using random texture.</p>
-    <label>
-        Feedback frame delay:
-        <input id="feedbackFrameDelay"
-               type="range"
-               min="0"
-               max="1000"
-               value="0"
-               step="10">
-        <span id="feedbackFrameDelayValue">0 ms</span>
-    </label>
+    <div id="projectorTextureControls" hidden>
+        <label for="projectorTextureType">Projector texture:</label>
+        <select id="projectorTextureType">
+            <option value="random">Random</option>
+            <option value="checker">Checkerboard</option>
+            <option value="stripes">Stripes</option>
+            <option value="dots">Square dot grid</option>
+            <option value="gradient">Gradient</option>
+            <option value="image">Image file...</option>
+            <option value="camera">Device camera</option>
+        </select>
+        <input id="projectorTextureImageFile"
+               type="file"
+               accept="image/*"
+               aria-label="Choose projector texture image"
+               hidden>
+        <p id="projectorTextureStatus" aria-live="polite">
+            Using random texture.
+        </p>
+    </div>
+    <div id="cameraFeedbackControls">
+        <label>
+            Feedback frame delay:
+            <input id="feedbackFrameDelay"
+                   type="range"
+                   min="0"
+                   max="1000"
+                   value="0"
+                   step="10">
+            <span id="feedbackFrameDelayValue">0 ms</span>
+        </label>
+        <label>
+            Previous image factor (a):
+            <input id="previousFactor"
+                   type="range"
+                   min="0"
+                   max="1"
+                   value="0.0"
+                   step="0.01">
+            <span id="previousFactorValue">0.00</span>
+        </label>
+        <label>
+            Current image factor (b):
+            <input id="currentFactor"
+                   type="range"
+                   min="0"
+                   max="1"
+                   value="1.0"
+                   step="0.01">
+            <span id="currentFactorValue">1.00</span>
+        </label>
+    </div>
     <label>
         Baseline:
         <input id="baseline"
@@ -293,26 +355,6 @@ label{
                value="2.0"
                step="0.01">
         <span id="baselineValue">2.00</span>
-    </label>
-    <label>
-        Previous image factor (a):
-        <input id="previousFactor"
-               type="range"
-               min="0"
-               max="1"
-               value="0.0"
-               step="0.01">
-        <span id="previousFactorValue">0.00</span>
-    </label>
-    <label>
-        Current image factor (b):
-        <input id="currentFactor"
-               type="range"
-               min="0"
-               max="1"
-               value="1.0"
-               step="0.01">
-        <span id="currentFactorValue">1.00</span>
     </label>
     <!-- <button id="resetFeedback" type="button">Re-project initial noise</button> -->
 </details>
@@ -329,8 +371,8 @@ label{
         </select>
         <button id="addObject" type="button">Add object</button>
     </div>
-    <label for="sceneObjects">Scene objects</label>
-    <select id="sceneObjects" size="4" aria-label="Scene objects"></select>
+    <label id="sceneObjectsLabel">Scene objects</label>
+    <div id="sceneObjects" role="list" aria-labelledby="sceneObjectsLabel"></div>
     <div class="editorActions">
         <button id="deleteObject" type="button">Delete selected</button>
     </div>
@@ -339,9 +381,23 @@ label{
         <button type="button" data-transform-mode="rotate" aria-pressed="false">Rotate</button>
         <button type="button" data-transform-mode="scale" aria-pressed="false">Scale</button>
     </div>
-    <div id="leftPanelEditor" hidden>
-        <strong>Image panel settings</strong>
-        <p>Uses the shared texture selected in Experiment controls.</p>
+    <div id="imagePanelEditor" hidden>
+        <label for="leftTextureType">Image panel texture:</label>
+        <select id="leftTextureType">
+            <option value="random">Random</option>
+            <option value="checker">Checkerboard</option>
+            <option value="stripes">Stripes</option>
+            <option value="dots">Square dot grid</option>
+            <option value="gradient">Gradient</option>
+            <option value="image">Image file...</option>
+            <option value="camera">Device camera</option>
+        </select>
+        <input id="textureImageFile"
+               type="file"
+               accept="image/*"
+               aria-label="Choose image panel texture"
+               hidden>
+        <p id="textureStatus" aria-live="polite">Using random texture.</p>
         <div class="transformRow">
             <span>Position</span>
             <input data-panel-position="x" type="number" step="0.1" aria-label="Image panel position X">
@@ -730,13 +786,13 @@ const projectionUniforms = {
     previousFrame: {
         value: seedTexture
     },
-    previousFrameTransform: {
-        value: new THREE.Matrix3()
-    },
     currentFrame: {
         value: seedTexture
     },
     currentFrameTransform: {
+        value: new THREE.Matrix3()
+    },
+    cameraKeystoneTransform: {
         value: new THREE.Matrix3()
     },
     textureMode: {
@@ -752,6 +808,60 @@ const projectionUniforms = {
 
 const projectionTextureTransform =
     new THREE.Matrix3();
+const cameraPlaneProjection =
+    new THREE.Matrix3();
+const projectorPlaneProjection =
+    new THREE.Matrix3();
+const cameraClipMatrix =
+    new THREE.Matrix4();
+const projectorClipMatrix =
+    new THREE.Matrix4();
+const keystonePlaneZ = 10;
+
+function updateCameraKeystoneTransform()
+{
+    captureCamera.updateMatrixWorld(true);
+    projector.updateMatrixWorld(true);
+    cameraClipMatrix.multiplyMatrices(
+        captureCamera.projectionMatrix,
+        captureCamera.matrixWorldInverse
+    );
+    projectorClipMatrix.multiplyMatrices(
+        projector.projectionMatrix,
+        projector.matrixWorldInverse
+    );
+
+    const cameraElements = cameraClipMatrix.elements;
+    cameraPlaneProjection.set(
+        cameraElements[0],
+        cameraElements[4],
+        cameraElements[8]*keystonePlaneZ + cameraElements[12],
+        cameraElements[1],
+        cameraElements[5],
+        cameraElements[9]*keystonePlaneZ + cameraElements[13],
+        cameraElements[3],
+        cameraElements[7],
+        cameraElements[11]*keystonePlaneZ + cameraElements[15]
+    );
+
+    const projectorElements = projectorClipMatrix.elements;
+    projectorPlaneProjection.set(
+        projectorElements[0],
+        projectorElements[4],
+        projectorElements[8]*keystonePlaneZ + projectorElements[12],
+        projectorElements[1],
+        projectorElements[5],
+        projectorElements[9]*keystonePlaneZ + projectorElements[13],
+        projectorElements[3],
+        projectorElements[7],
+        projectorElements[11]*keystonePlaneZ + projectorElements[15]
+    );
+
+    projectorPlaneProjection.invert();
+    projectionUniforms.cameraKeystoneTransform.value
+        .copy(cameraPlaneProjection)
+        .multiply(projectorPlaneProjection);
+}
 
 const projectionMaterial =
     new THREE.ShaderMaterial({
@@ -767,9 +877,9 @@ const projectionMaterial =
         `,
         fragmentShader:`
             uniform sampler2D previousFrame;
-            uniform mat3 previousFrameTransform;
             uniform sampler2D currentFrame;
             uniform mat3 currentFrameTransform;
+            uniform mat3 cameraKeystoneTransform;
             uniform float textureMode;
             uniform float previousFactor;
             uniform float currentFactor;
@@ -778,15 +888,26 @@ const projectionMaterial =
 
             void main()
             {
+                vec3 projectorNdc =
+                    vec3(vUv*2.0 - 1.0, 1.0);
+                vec3 cameraNdc =
+                    cameraKeystoneTransform * projectorNdc;
+                vec2 cameraUv =
+                    cameraNdc.xy/cameraNdc.z * 0.5 + 0.5;
+
                 vec3 previous =
                     texture2D(
                         previousFrame,
-                        (previousFrameTransform * vec3(vUv, 1.0)).xy
+                        cameraUv
                     ).rgb;
+                vec3 currentCoordinates =
+                    textureMode > 0.5
+                        ? currentFrameTransform * vec3(vUv, 1.0)
+                        : vec3(cameraUv, 1.0);
                 vec3 current =
                     texture2D(
                         currentFrame,
-                        (currentFrameTransform * vec3(vUv, 1.0)).xy
+                        currentCoordinates.xy/currentCoordinates.z
                     ).rgb;
 
                 vec3 projected =
@@ -1102,6 +1223,7 @@ leftTexturedObject.scale.set(
     panelHeight,
     1
 );
+leftTexturedObject.visible = true;
 leftTexturedObject.position.set(
     -panelWidth*0.5,
     0,
@@ -1111,8 +1233,16 @@ scene.add(leftTexturedObject);
 
 const leftTextureSelect =
     document.getElementById("leftTextureType");
-const leftPanelEditor =
-    document.getElementById("leftPanelEditor");
+const projectorTextureSelect =
+    document.getElementById("projectorTextureType");
+const projectorTextureControls =
+    document.getElementById("projectorTextureControls");
+const projectorTextureImageFile =
+    document.getElementById("projectorTextureImageFile");
+const projectorTextureStatus =
+    document.getElementById("projectorTextureStatus");
+const imagePanelEditor =
+    document.getElementById("imagePanelEditor");
 const textureImageFile =
     document.getElementById("textureImageFile");
 const textureStatus =
@@ -1125,8 +1255,18 @@ cameraTextureVideo.playsInline = true;
 let leftTextureStream = null;
 let activeTextureIsOwned = true;
 let textureSelectionVersion = 0;
+const projectorTextureVideo =
+    document.createElement("video");
+projectorTextureVideo.autoplay = true;
+projectorTextureVideo.muted = true;
+projectorTextureVideo.playsInline = true;
+let projectorTextureStream = null;
+let projectorTextureIsOwned = true;
+let projectorTextureSelectionVersion = 0;
+let projectorTexture =
+    createRandomTexture(0x2468ace0);
 
-function updateLeftPanelTextureCrop(texture)
+function updateimagePanelTextureCrop(texture)
 {
     const textureAspect = getTextureAspect(texture);
     if(!textureAspect)
@@ -1158,7 +1298,7 @@ function updateLeftPanelTextureCrop(texture)
     texture.needsUpdate = true;
 }
 
-function updateLeftPanelEditorFields()
+function updateimagePanelEditorFields()
 {
     document
         .querySelectorAll("[data-panel-position]")
@@ -1186,7 +1326,7 @@ function stopTextureStream(stream = leftTextureStream)
     }
 }
 
-function setLeftPanelTexture(texture, owned = true)
+function setimagePanelTexture(texture, owned = true)
 {
     if(activeTextureIsOwned)
     {
@@ -1196,7 +1336,7 @@ function setLeftPanelTexture(texture, owned = true)
     leftTexturedObject.material.map = texture;
     leftTexturedObject.material.needsUpdate = true;
     activeTextureIsOwned = owned;
-    updateLeftPanelTextureCrop(texture);
+    updateimagePanelTextureCrop(texture);
 }
 
 function createPatternTexture(pattern)
@@ -1271,7 +1411,7 @@ function createPatternTexture(pattern)
     return texture;
 }
 
-async function selectLeftPanelTexture()
+async function selectimagePanelTexture()
 {
     const selectionVersion = ++textureSelectionVersion;
     stopTextureStream();
@@ -1321,7 +1461,7 @@ async function selectLeftPanelTexture()
             const texture =
                 new THREE.VideoTexture(cameraTextureVideo);
             texture.colorSpace = THREE.SRGBColorSpace;
-            setLeftPanelTexture(texture);
+            setimagePanelTexture(texture);
             textureStatus.textContent =
                 "Using live device camera. Choose another texture to stop it.";
         }
@@ -1342,19 +1482,178 @@ async function selectLeftPanelTexture()
 
     if(textureType === "random")
     {
-        setLeftPanelTexture(createRandomTexture(0x13579bdf));
+        setimagePanelTexture(createRandomTexture(0x13579bdf));
         textureStatus.textContent = "Using random texture.";
         return;
     }
 
-    setLeftPanelTexture(createPatternTexture(textureType));
+    setimagePanelTexture(createPatternTexture(textureType));
     textureStatus.textContent =
         `Using ${leftTextureSelect.selectedOptions[0].textContent.toLowerCase()} pattern.`;
 }
 
 leftTextureSelect.addEventListener(
     "change",
-    selectLeftPanelTexture
+    selectimagePanelTexture
+);
+
+function stopProjectorTextureStream(stream = projectorTextureStream)
+{
+    if(stream)
+    {
+        stream.getTracks().forEach(track => track.stop());
+        if(projectorTextureStream === stream)
+        {
+            projectorTextureStream = null;
+        }
+        if(projectorTextureVideo.srcObject === stream)
+        {
+            projectorTextureVideo.srcObject = null;
+        }
+    }
+}
+
+function setProjectorTexture(texture, owned = true)
+{
+    if(projectorTextureIsOwned)
+    {
+        projectorTexture.dispose();
+    }
+
+    projectorTexture = texture;
+    projectorTextureIsOwned = owned;
+    lastFeedbackFrameTime = null;
+}
+
+async function selectProjectorTexture()
+{
+    const selectionVersion = ++projectorTextureSelectionVersion;
+    stopProjectorTextureStream();
+    const textureType = projectorTextureSelect.value;
+
+    if(textureType === "image")
+    {
+        projectorTextureImageFile.hidden = false;
+        projectorTextureStatus.textContent =
+            "Choose an image file to project as a texture.";
+        return;
+    }
+    projectorTextureImageFile.hidden = true;
+
+    if(textureType === "camera")
+    {
+        if(!navigator.mediaDevices?.getUserMedia)
+        {
+            projectorTextureStatus.textContent =
+                "Camera access requires HTTPS or localhost and a supported browser.";
+            return;
+        }
+
+        projectorTextureStatus.textContent =
+            "Requesting device camera access...";
+        let stream = null;
+        try
+        {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video:true,
+                audio:false
+            });
+            if(selectionVersion !== projectorTextureSelectionVersion)
+            {
+                stopProjectorTextureStream(stream);
+                return;
+            }
+
+            projectorTextureStream = stream;
+            projectorTextureVideo.srcObject = stream;
+            await projectorTextureVideo.play();
+            if(selectionVersion !== projectorTextureSelectionVersion)
+            {
+                stopProjectorTextureStream(stream);
+                return;
+            }
+
+            const texture =
+                new THREE.VideoTexture(projectorTextureVideo);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            setProjectorTexture(texture);
+            projectorTextureStatus.textContent =
+                "Using live device camera as the projector texture.";
+        }
+        catch(error)
+        {
+            if(stream)
+            {
+                stopProjectorTextureStream(stream);
+            }
+            if(selectionVersion === projectorTextureSelectionVersion)
+            {
+                projectorTextureStatus.textContent =
+                    `Could not start device camera: ${error.message}`;
+            }
+        }
+        return;
+    }
+
+    if(textureType === "random")
+    {
+        setProjectorTexture(createRandomTexture(0x2468ace0));
+        projectorTextureStatus.textContent = "Using random texture.";
+        return;
+    }
+
+    setProjectorTexture(createPatternTexture(textureType));
+    projectorTextureStatus.textContent =
+        `Using ${projectorTextureSelect.selectedOptions[0].textContent.toLowerCase()} pattern.`;
+}
+
+projectorTextureSelect.addEventListener(
+    "change",
+    selectProjectorTexture
+);
+
+projectorTextureImageFile.addEventListener(
+    "change",
+    () =>
+    {
+        const file = projectorTextureImageFile.files[0];
+        if(!file)
+        {
+            return;
+        }
+
+        const selectionVersion = ++projectorTextureSelectionVersion;
+        stopProjectorTextureStream();
+        projectorTextureStatus.textContent = `Loading ${file.name}...`;
+        const imageUrl = URL.createObjectURL(file);
+        new THREE.TextureLoader().load(
+            imageUrl,
+            texture =>
+            {
+                URL.revokeObjectURL(imageUrl);
+                if(selectionVersion !== projectorTextureSelectionVersion)
+                {
+                    texture.dispose();
+                    return;
+                }
+
+                texture.colorSpace = THREE.SRGBColorSpace;
+                setProjectorTexture(texture);
+                projectorTextureStatus.textContent =
+                    `Using ${file.name} as the projector texture.`;
+            },
+            undefined,
+            error =>
+            {
+                URL.revokeObjectURL(imageUrl);
+                if(selectionVersion === projectorTextureSelectionVersion)
+                {
+                    projectorTextureStatus.textContent =
+                        `Could not load ${file.name}: ${error.message || "unsupported image file"}.`;
+                }
+            }
+        );
+    }
 );
 
 textureImageFile.addEventListener(
@@ -1383,7 +1682,7 @@ textureImageFile.addEventListener(
                 }
 
                 texture.colorSpace = THREE.SRGBColorSpace;
-                setLeftPanelTexture(texture);
+                setimagePanelTexture(texture);
                 textureStatus.textContent = `Using ${file.name}.`;
             },
             undefined,
@@ -1402,7 +1701,11 @@ textureImageFile.addEventListener(
 
 window.addEventListener(
     "beforeunload",
-    () => stopTextureStream()
+    () =>
+    {
+        stopTextureStream();
+        stopProjectorTextureStream();
+    }
 );
 
 ["loadedmetadata", "resize"].forEach(
@@ -1414,7 +1717,7 @@ window.addEventListener(
             {
                 if(leftTexturedObject.material.map?.image === cameraTextureVideo)
                 {
-                    updateLeftPanelTextureCrop(
+                    updateimagePanelTextureCrop(
                         leftTexturedObject.material.map
                     );
                 }
@@ -1434,14 +1737,14 @@ document
                 const value = Number(input.value);
                 if(!Number.isFinite(value))
                 {
-                    updateLeftPanelEditorFields();
+                    updateimagePanelEditorFields();
                     return;
                 }
 
                 leftTexturedObject.position[input.dataset.panelPosition] =
                     value;
                 leftTexturedObject.userData.manuallyPositioned = true;
-                updateLeftPanelEditorFields();
+                updateimagePanelEditorFields();
             }
         );
     });
@@ -1451,24 +1754,27 @@ document
 ///////////////////////////////////////////////////////////////////////////
 
 const editableObjects = new Map();
-const sceneObjectsSelect =
+const sceneObjectsList =
     document.getElementById("sceneObjects");
+const editableObjectRows = new Map();
 const projectorToggle =
     document.getElementById("projectorEnabled");
 const projectorSourceInputs =
     [...document.querySelectorAll('input[name="projectorSource"]')];
+const cameraFeedbackControls =
+    document.getElementById("cameraFeedbackControls");
 const editorHint =
     document.getElementById("editorHint");
 let selectedObject = null;
 let nextObjectNumber = 1;
-let transformEditingEnabled = true;
+let transformEditingEnabled = false;
 const transformModeButtons =
     [...document.querySelectorAll("[data-transform-mode]")];
 
 function updateTransformModeButtons()
 {
     const activeMode =
-        transformEditingEnabled && selectedObject
+        transformEditingEnabled && selectedObject?.visible
             ? transformControls.getMode()
             : null;
 
@@ -1484,7 +1790,9 @@ function updateTransformModeButtons()
 
     editorHint.textContent =
         selectedObject
-            ? transformEditingEnabled
+            ? !selectedObject.visible
+                ? `${selectedObject.userData.editorName} selected but hidden.`
+                : transformEditingEnabled
                 ? `${selectedObject.userData.editorName} selected. Drag the gizmo or edit the values.`
                 : `${selectedObject.userData.editorName} selected. Gizmo hidden; click a transform button to enable it.`
             : "Select an object to edit it.";
@@ -1495,11 +1803,51 @@ function registerEditableObject(object, name)
     object.userData.editorName = name;
     editableObjects.set(object.uuid, object);
 
-    const option =
-        document.createElement("option");
-    option.value = object.uuid;
-    option.textContent = name;
-    sceneObjectsSelect.appendChild(option);
+    const row = document.createElement("div");
+    row.className = "sceneObjectRow";
+    row.setAttribute("role", "listitem");
+    row.dataset.selected = "false";
+
+    const selectButton = document.createElement("button");
+    selectButton.className = "sceneObjectSelect";
+    selectButton.type = "button";
+    selectButton.textContent = name;
+    selectButton.setAttribute("aria-pressed", "false");
+    selectButton.addEventListener(
+        "click",
+        () => selectEditableObject(object)
+    );
+
+    const visibilityLabel = document.createElement("label");
+    visibilityLabel.className = "sceneObjectVisibility";
+    visibilityLabel.title = `Show ${name}`;
+    const visibilityCheckbox = document.createElement("input");
+    visibilityCheckbox.type = "checkbox";
+    visibilityCheckbox.checked = object.visible;
+    visibilityCheckbox.setAttribute("aria-label", `Show ${name}`);
+    visibilityCheckbox.addEventListener(
+        "change",
+        () =>
+        {
+            object.visible = visibilityCheckbox.checked;
+            if(selectedObject === object)
+            {
+                if(transformEditingEnabled && object.visible)
+                {
+                    transformControls.attach(object);
+                }
+                else
+                {
+                    transformControls.detach();
+                }
+                updateTransformModeButtons();
+            }
+        }
+    );
+    visibilityLabel.appendChild(visibilityCheckbox);
+    row.append(selectButton, visibilityLabel);
+    sceneObjectsList.appendChild(row);
+    editableObjectRows.set(object.uuid, row);
 }
 
 function updateTransformFields(object)
@@ -1535,13 +1883,25 @@ function updateTransformFields(object)
 function selectEditableObject(object)
 {
     selectedObject = object;
-    const isLeftPanel = object === leftTexturedObject;
-    leftPanelEditor.hidden = !isLeftPanel;
-    document.getElementById("transformPositionRow").hidden = isLeftPanel;
+    editableObjectRows.forEach(
+        (row, uuid) =>
+        {
+            const isSelected = object?.uuid === uuid;
+            row.dataset.selected = String(isSelected);
+            row.querySelector(".sceneObjectSelect")
+                .setAttribute(
+                    "aria-pressed",
+                    String(isSelected)
+                );
+        }
+    );
+    const isimagePanel = object === leftTexturedObject;
+    imagePanelEditor.hidden = !isimagePanel;
+    document.getElementById("transformPositionRow").hidden = isimagePanel;
 
     if(object)
     {
-        if(transformEditingEnabled)
+        if(transformEditingEnabled && object.visible)
         {
             transformControls.attach(object);
         }
@@ -1549,18 +1909,16 @@ function selectEditableObject(object)
         {
             transformControls.detach();
         }
-        sceneObjectsSelect.value = object.uuid;
     }
     else
     {
         transformControls.detach();
-        sceneObjectsSelect.selectedIndex = -1;
     }
     updateTransformModeButtons();
     updateTransformFields(object);
-    if(isLeftPanel)
+    if(isimagePanel)
     {
-        updateLeftPanelEditorFields();
+        updateimagePanelEditorFields();
     }
 }
 
@@ -1576,15 +1934,6 @@ function selectEditableObject(object)
     }
 );
 
-sceneObjectsSelect.addEventListener(
-    "change",
-    () =>
-    {
-        selectEditableObject(
-            editableObjects.get(sceneObjectsSelect.value) || null
-        );
-    }
-);
 selectEditableObject(initialHead);
 
 transformModeButtons.forEach(
@@ -1608,7 +1957,7 @@ transformModeButtons.forEach(
                 {
                     transformEditingEnabled = true;
                     transformControls.setMode(mode);
-                    if(selectedObject)
+                    if(selectedObject?.visible)
                     {
                         transformControls.attach(selectedObject);
                     }
@@ -1627,8 +1976,8 @@ transformControls.addEventListener(
         if(selectedObject === leftTexturedObject)
         {
             selectedObject.userData.manuallyPositioned = true;
-            updateLeftPanelEditorFields();
-            updateLeftPanelTextureCrop(selectedObject.material.map);
+            updateimagePanelEditorFields();
+            updateimagePanelTextureCrop(selectedObject.material.map);
         }
         updateTransformFields(selectedObject);
     }
@@ -1676,10 +2025,10 @@ document
                 updateTransformFields(selectedObject);
                 if(selectedObject === leftTexturedObject)
                 {
-                    updateLeftPanelEditorFields();
+                    updateimagePanelEditorFields();
                     if(transform === "scale")
                     {
-                        updateLeftPanelTextureCrop(
+                        updateimagePanelTextureCrop(
                             selectedObject.material.map
                         );
                     }
@@ -1758,9 +2107,6 @@ document
             }
 
             const object = selectedObject;
-            const option =
-                [...sceneObjectsSelect.options]
-                    .find(item => item.value === object.uuid);
             object.removeFromParent();
             object.traverse(
                 child =>
@@ -1783,7 +2129,8 @@ document
                 }
             );
             editableObjects.delete(object.uuid);
-            option?.remove();
+            editableObjectRows.get(object.uuid)?.remove();
+            editableObjectRows.delete(object.uuid);
             selectEditableObject(null);
         }
     );
@@ -1982,6 +2329,11 @@ projectorSourceInputs.forEach(
         "change",
         () =>
         {
+            const isCameraSource =
+                input.checked && input.value === "camera";
+            cameraFeedbackControls.hidden = !isCameraSource;
+            projectorTextureControls.hidden =
+                !input.checked || input.value !== "texture";
             lastFeedbackFrameTime = null;
         }
     )
@@ -2180,8 +2532,7 @@ function animate(timestamp)
                 "texture";
         if(usePanelTexture)
         {
-            const sourceTexture =
-                leftTexturedObject.material.map;
+            const sourceTexture = projectorTexture;
             projectionUniforms.currentFrame.value =
                 sourceTexture;
             const targetAspect =
@@ -2217,13 +2568,13 @@ function animate(timestamp)
 
             projectionUniforms.previousFrame.value =
                 previousCameraTexture;
-            projectionUniforms.previousFrameTransform.value.identity();
             projectionUniforms.currentFrame.value =
                 currentCameraTarget.texture;
             projectionUniforms.currentFrameTransform.value.identity();
             projectionUniforms.textureMode.value = 0;
         }
 
+        updateCameraKeystoneTransform();
         renderer.setRenderTarget(projectedTarget);
         renderer.clear();
         renderer.render(
