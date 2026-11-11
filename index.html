@@ -244,6 +244,16 @@ label{
         Projector on
     </label>
     <label>
+        Feedback frame delay:
+        <input id="feedbackFrameDelay"
+               type="range"
+               min="0"
+               max="1000"
+               value="0"
+               step="10">
+        <span id="feedbackFrameDelayValue">0 ms</span>
+    </label>
+    <label>
         Baseline:
         <input id="baseline"
                type="range"
@@ -677,36 +687,11 @@ const projectedTarget =
     );
 
 ///////////////////////////////////////////////////////////////////////////
-// seed texture
+// initial white feedback texture
 ///////////////////////////////////////////////////////////////////////////
 
 const seedData = new Uint8Array(SIZE*SIZE*4);
-const seedCells = new Uint8Array(64*64);
-let randomState = 0x12345678;
-
-for(let i=0;i<seedCells.length;i++)
-{
-    randomState =
-        (Math.imul(randomState,1664525) + 1013904223) >>> 0;
-    seedCells[i] =
-        48 + (randomState >>> 24) * 207 / 255;
-}
-
-for(let y=0;y<SIZE;y++)
-{
-    for(let x=0;x<SIZE;x++)
-    {
-        const value =
-            seedCells[(y >> 4)*64 + (x >> 4)];
-        const i =
-            (y*SIZE + x)*4;
-
-        seedData[i] = value;
-        seedData[i+1] = value;
-        seedData[i+2] = value;
-        seedData[i+3] = 255;
-    }
-}
+seedData.fill(255);
 
 const seedTexture =
     new THREE.DataTexture(
@@ -874,7 +859,8 @@ function createFeedbackMaterial(side = THREE.FrontSide)
     });
 }
 
-let projectorOn = true;
+let projectorOn = false;
+let lastFeedbackFrameTime = null;
 const projectorObjects = new Set();
 
 function registerProjectorObject(object)
@@ -899,6 +885,23 @@ function registerProjectorObject(object)
 
 function setProjectorEnabled(enabled)
 {
+    if(enabled && !projectorOn)
+    {
+        lastFeedbackFrameTime = null;
+
+        const previousRenderTarget = renderer.getRenderTarget();
+        renderer.setRenderTarget(currentCameraTarget);
+        renderer.clear();
+        renderer.render(scene, captureCamera);
+        previousCameraTexture = currentCameraTarget.texture;
+        uniforms.feedbackTex.value = previousCameraTexture;
+
+        const spareCameraTarget = previousCameraTarget;
+        previousCameraTarget = currentCameraTarget;
+        currentCameraTarget = spareCameraTarget;
+        renderer.setRenderTarget(previousRenderTarget);
+    }
+
     projectorOn = enabled;
     projectorObjects.forEach(
         object =>
@@ -1898,6 +1901,11 @@ const currentFactorSlider =
 const currentFactorValue =
     document.getElementById("currentFactorValue");
 
+const feedbackFrameDelaySlider =
+    document.getElementById("feedbackFrameDelay");
+const feedbackFrameDelayValue =
+    document.getElementById("feedbackFrameDelayValue");
+
 projectorToggle.addEventListener(
     "change",
     () => setProjectorEnabled(projectorToggle.checked)
@@ -2041,6 +2049,20 @@ currentFactorSlider.addEventListener(
 
 updateCurrentFactor();
 
+setProjectorEnabled(projectorToggle.checked);
+
+function updateFeedbackFrameDelay()
+{
+    feedbackFrameDelayValue.textContent =
+        `${feedbackFrameDelaySlider.value} ms`;
+}
+
+feedbackFrameDelaySlider.addEventListener(
+    "input",
+    updateFeedbackFrameDelay
+);
+updateFeedbackFrameDelay();
+
 // let resetFeedbackRequested = false;
 
 // const resetFeedbackButton =
@@ -2058,7 +2080,7 @@ updateCurrentFactor();
 // animation
 ///////////////////////////////////////////////////////////////////////////
 
-function animate()
+function animate(timestamp)
 {
     requestAnimationFrame(animate);
 
@@ -2069,8 +2091,14 @@ function animate()
     //     resetFeedbackRequested = false;
     // }
 
-    if(projectorOn)
+    const feedbackFrameDelay =
+        Number(feedbackFrameDelaySlider.value);
+    if(projectorOn &&
+        (lastFeedbackFrameTime === null ||
+            timestamp - lastFeedbackFrameTime >= feedbackFrameDelay))
     {
+        lastFeedbackFrameTime = timestamp;
+
         renderer.setRenderTarget(currentCameraTarget);
         renderer.clear();
         renderer.render(
