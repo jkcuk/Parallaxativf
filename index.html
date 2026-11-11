@@ -78,6 +78,10 @@ canvas{
     padding:4px 6px;
 }
 
+#sceneEditor [hidden]{
+    display:none;
+}
+
 #sceneEditor select{
     width:100%;
 }
@@ -95,6 +99,37 @@ canvas{
 
 .editorActions button{
     flex:1;
+}
+
+#leftPanelEditor{
+    margin:10px 0;
+    padding-top:8px;
+    border-top:1px solid #bbb;
+}
+
+#leftPanelEditor[hidden]{
+    display:none;
+}
+
+#leftPanelEditor select,
+#leftPanelEditor input{
+    width:100%;
+    margin-top:4px;
+}
+
+#leftPanelEditor .transformRow{
+    grid-template-columns:48px repeat(3, 1fr);
+}
+
+#leftPanelEditor .sizeRow{
+    grid-template-columns:42px minmax(0, 1fr) 46px minmax(0, 1fr);
+}
+
+#textureStatus{
+    min-height:1em;
+    margin:6px 0 0;
+    color:#444;
+    font-size:12px;
 }
 
 .transformRow{
@@ -143,6 +178,45 @@ canvas{
     color:white;
     background:rgba(0,0,0,0.65);
     border-radius:3px;
+    font-size:12px;
+}
+
+#imageContextMenu{
+    position:fixed;
+    z-index:3;
+    min-width:180px;
+    padding:5px;
+    background:#fff;
+    border:1px solid #888;
+    border-radius:6px;
+    box-shadow:0 4px 14px rgba(0,0,0,0.35);
+}
+
+#imageContextMenu[hidden]{
+    display:none;
+}
+
+#imageContextMenu button{
+    display:block;
+    width:100%;
+    padding:8px 10px;
+    border:0;
+    border-radius:3px;
+    background:transparent;
+    text-align:left;
+    font:inherit;
+    cursor:pointer;
+}
+
+#imageContextMenu button:hover,
+#imageContextMenu button:focus-visible{
+    background:#e8eef8;
+}
+
+#imageContextStatus{
+    max-width:240px;
+    margin:4px 8px;
+    color:#444;
     font-size:12px;
 }
 
@@ -206,12 +280,42 @@ label{
     <div class="editorActions">
         <button id="deleteObject" type="button">Delete selected</button>
     </div>
+    <div id="leftPanelEditor" hidden>
+        <strong>Image panel settings</strong>
+        <label for="leftTextureType">Texture</label>
+        <select id="leftTextureType">
+            <option value="random">Random</option>
+            <option value="checker">Checkerboard</option>
+            <option value="stripes">Stripes</option>
+            <option value="gradient">Gradient</option>
+            <option value="image">Image file...</option>
+            <option value="camera">Device camera</option>
+        </select>
+        <input id="textureImageFile"
+               type="file"
+               accept="image/*"
+               aria-label="Choose image texture"
+               hidden>
+        <p id="textureStatus" aria-live="polite">Using random texture.</p>
+        <div class="transformRow">
+            <span>Position</span>
+            <input data-panel-position="x" type="number" step="0.1" aria-label="Image panel position X">
+            <input data-panel-position="y" type="number" step="0.1" aria-label="Image panel position Y">
+            <input data-panel-position="z" type="number" step="0.1" aria-label="Image panel position Z">
+        </div>
+        <div class="transformRow sizeRow">
+            <span>Width</span>
+            <input id="leftPanelWidth" type="number" min="0.01" step="0.1" aria-label="Image panel width">
+            <span>Height</span>
+            <input id="leftPanelHeight" type="number" min="0.01" step="0.1" aria-label="Image panel height">
+        </div>
+    </div>
     <div class="editorActions" aria-label="Transform mode">
         <button type="button" data-transform-mode="translate">Move</button>
         <button type="button" data-transform-mode="rotate">Rotate</button>
         <button type="button" data-transform-mode="scale">Scale</button>
     </div>
-    <div class="transformRow">
+    <div class="transformRow" id="transformPositionRow">
         <span>Position</span>
         <input data-transform="position" data-axis="x" type="number" step="0.1" aria-label="Position X">
         <input data-transform="position" data-axis="y" type="number" step="0.1" aria-label="Position Y">
@@ -223,7 +327,7 @@ label{
         <input data-transform="rotation" data-axis="y" type="number" step="1" aria-label="Rotation Y in degrees">
         <input data-transform="rotation" data-axis="z" type="number" step="1" aria-label="Rotation Z in degrees">
     </div>
-    <div class="transformRow">
+    <div class="transformRow" id="transformScaleRow">
         <span>Scale</span>
         <input data-transform="scale" data-axis="x" type="number" min="0.01" step="0.1" aria-label="Scale X">
         <input data-transform="scale" data-axis="y" type="number" min="0.01" step="0.1" aria-label="Scale Y">
@@ -239,6 +343,12 @@ label{
     <label id="previewLabel">Camera</label>
 </div>
 
+<div id="imageContextMenu" role="menu" aria-label="Image actions" hidden>
+    <button id="saveCurrentImage" type="button" role="menuitem">Save image...</button>
+    <button id="copyCurrentImage" type="button" role="menuitem">Copy image</button>
+    <p id="imageContextStatus" aria-live="polite"></p>
+</div>
+
 <script type="module">
 
 import * as THREE from "three";
@@ -250,7 +360,8 @@ import {TransformControls} from "three/addons/controls/TransformControls.js";
 ///////////////////////////////////////////////////////////////////////////
 
 const renderer = new THREE.WebGLRenderer({
-    antialias:true
+    antialias:true,
+    preserveDrawingBuffer:true
 });
 
 renderer.setSize(
@@ -259,6 +370,139 @@ renderer.setSize(
 );
 
 document.body.appendChild(renderer.domElement);
+
+const imageContextMenu =
+    document.getElementById("imageContextMenu");
+const imageContextStatus =
+    document.getElementById("imageContextStatus");
+
+function closeImageContextMenu()
+{
+    imageContextMenu.hidden = true;
+}
+
+function openImageContextMenu(event)
+{
+    const target = event.target;
+    if(target !== renderer.domElement &&
+        !document.getElementById("capturePreview").contains(target))
+    {
+        return;
+    }
+
+    event.preventDefault();
+    imageContextStatus.textContent = "";
+    imageContextMenu.hidden = false;
+    imageContextMenu.style.left = `${event.clientX}px`;
+    imageContextMenu.style.top = `${event.clientY}px`;
+
+    const bounds = imageContextMenu.getBoundingClientRect();
+    imageContextMenu.style.left =
+        `${Math.max(8, Math.min(event.clientX, window.innerWidth - bounds.width - 8))}px`;
+    imageContextMenu.style.top =
+        `${Math.max(8, Math.min(event.clientY, window.innerHeight - bounds.height - 8))}px`;
+}
+
+document.addEventListener("contextmenu", openImageContextMenu);
+document.addEventListener(
+    "pointerdown",
+    event =>
+    {
+        if(!imageContextMenu.hidden &&
+            !imageContextMenu.contains(event.target))
+        {
+            closeImageContextMenu();
+        }
+    }
+);
+document.addEventListener(
+    "keydown",
+    event =>
+    {
+        if(event.key === "Escape")
+        {
+            closeImageContextMenu();
+        }
+    }
+);
+
+function getCurrentImageBlob()
+{
+    return new Promise((resolve, reject) =>
+    {
+        renderer.domElement.toBlob(
+            blob =>
+            {
+                if(blob)
+                {
+                    resolve(blob);
+                }
+                else
+                {
+                    reject(new Error("The current image could not be captured."));
+                }
+            },
+            "image/png"
+        );
+    });
+}
+
+document
+    .getElementById("saveCurrentImage")
+    .addEventListener(
+        "click",
+        async () =>
+        {
+            try
+            {
+                const blob = await getCurrentImageBlob();
+                const url = URL.createObjectURL(blob);
+                const download = document.createElement("a");
+                download.href = url;
+                download.download = "misfeedback.png";
+                download.click();
+                window.setTimeout(
+                    () => URL.revokeObjectURL(url),
+                    1000
+                );
+                imageContextStatus.textContent = "Image saved.";
+            }
+            catch(error)
+            {
+                imageContextStatus.textContent =
+                    `Could not save image: ${error.message}`;
+            }
+        }
+    );
+
+document
+    .getElementById("copyCurrentImage")
+    .addEventListener(
+        "click",
+        async () =>
+        {
+            try
+            {
+                if(!navigator.clipboard?.write || !window.ClipboardItem)
+                {
+                    throw new Error(
+                        "Image clipboard access is not available in this browser context."
+                    );
+                }
+
+                const blob = await getCurrentImageBlob();
+                await navigator.clipboard.write([
+                    new ClipboardItem({"image/png": blob})
+                ]);
+                imageContextStatus.textContent = "Image copied to clipboard.";
+            }
+            catch(error)
+            {
+                imageContextStatus.textContent =
+                    `Could not copy image: ${error.message}`;
+            }
+        }
+    );
 
 ///////////////////////////////////////////////////////////////////////////
 // scene
@@ -296,16 +540,12 @@ const transformControls =
         observerCamera,
         renderer.domElement
     );
-function setObjectLayer(object, layer)
-{
-    object.layers?.set(layer);
-    object.children?.forEach(
-        child => setObjectLayer(child, layer)
-    );
-}
-
-setObjectLayer(transformControls, 1);
-scene.add(transformControls);
+const transformControlsHelper =
+    typeof transformControls.getHelper === "function"
+        ? transformControls.getHelper()
+        : transformControls;
+const transformControlsScene = new THREE.Scene();
+transformControlsScene.add(transformControlsHelper);
 
 transformControls.addEventListener(
     "dragging-changed",
@@ -650,7 +890,8 @@ scene.add(planeA);
 function createRandomTexture(seed)
 {
     const size = 256;
-    const data = new Uint8Array(0.2*size*size*4);
+    const width = Math.round(0.2*size);
+    const data = new Uint8Array(width*size*4);
     let state = seed;
 
     for(let i=0;i<data.length;i+=4)
@@ -666,7 +907,7 @@ function createRandomTexture(seed)
     const texture =
         new THREE.DataTexture(
             data,
-            0.2*size,
+            width,
             size,
             THREE.RGBAFormat
         );
@@ -688,11 +929,33 @@ const panelHeight =
         THREE.MathUtils.degToRad(captureCamera.fov * 0.5)
     );
 const panelWidth = panelHeight * captureCamera.aspect * 0.5;
+const initialPanelMaterial =
+    objectTextureMaterial(0x13579bdf);
+
+function getTextureAspect(texture)
+{
+    const image = texture?.image;
+    const width =
+        image?.videoWidth ||
+        image?.naturalWidth ||
+        image?.width;
+    const height =
+        image?.videoHeight ||
+        image?.naturalHeight ||
+        image?.height;
+
+    return width > 0 && height > 0
+        ? width/height
+        : null;
+}
 
 const leftTexturedObject =
     new THREE.Mesh(
-        new THREE.PlaneGeometry(0.3*panelWidth,panelHeight),
-        objectTextureMaterial(0x13579bdf)
+        new THREE.PlaneGeometry(
+            panelHeight*getTextureAspect(initialPanelMaterial.map),
+            panelHeight
+        ),
+        initialPanelMaterial
     );
 
 leftTexturedObject.position.set(
@@ -701,6 +964,371 @@ leftTexturedObject.position.set(
     zA-0.01
 );
 scene.add(leftTexturedObject);
+
+const leftTextureSelect =
+    document.getElementById("leftTextureType");
+const leftPanelEditor =
+    document.getElementById("leftPanelEditor");
+const leftPanelWidthInput =
+    document.getElementById("leftPanelWidth");
+const leftPanelHeightInput =
+    document.getElementById("leftPanelHeight");
+const textureImageFile =
+    document.getElementById("textureImageFile");
+const textureStatus =
+    document.getElementById("textureStatus");
+const cameraTextureVideo =
+    document.createElement("video");
+cameraTextureVideo.autoplay = true;
+cameraTextureVideo.muted = true;
+cameraTextureVideo.playsInline = true;
+let leftTextureStream = null;
+let activeTextureIsOwned = true;
+let textureSelectionVersion = 0;
+
+function updateLeftPanelTextureCrop(texture)
+{
+    const textureAspect = getTextureAspect(texture);
+    if(!textureAspect)
+    {
+        return;
+    }
+
+    const panelAspect =
+        leftTexturedObject.geometry.parameters.width *
+        Math.abs(leftTexturedObject.scale.x) /
+        (leftTexturedObject.geometry.parameters.height *
+            Math.abs(leftTexturedObject.scale.y));
+    const repeatX =
+        textureAspect > panelAspect
+            ? panelAspect/textureAspect
+            : 1;
+    const repeatY =
+        textureAspect < panelAspect
+            ? textureAspect/panelAspect
+            : 1;
+
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.repeat.set(repeatX, repeatY);
+    texture.offset.set(
+        (1 - repeatX)*0.5,
+        (1 - repeatY)*0.5
+    );
+    texture.needsUpdate = true;
+}
+
+function updateLeftPanelEditorFields()
+{
+    const geometry = leftTexturedObject.geometry;
+    leftPanelWidthInput.value =
+        (geometry.parameters.width *
+            Math.abs(leftTexturedObject.scale.x)).toFixed(2);
+    leftPanelHeightInput.value =
+        (geometry.parameters.height *
+            Math.abs(leftTexturedObject.scale.y)).toFixed(2);
+
+    document
+        .querySelectorAll("[data-panel-position]")
+        .forEach(input =>
+        {
+            input.value =
+                leftTexturedObject.position[input.dataset.panelPosition]
+                    .toFixed(2);
+        });
+}
+
+function setLeftPanelSize(changedDimension, value)
+{
+    if(!Number.isFinite(value) || value <= 0)
+    {
+        updateLeftPanelEditorFields();
+        return;
+    }
+
+    const width =
+        changedDimension === "width"
+            ? value/Math.abs(leftTexturedObject.scale.x)
+            : leftTexturedObject.geometry.parameters.width;
+    const height =
+        changedDimension === "height"
+            ? value/Math.abs(leftTexturedObject.scale.y)
+            : leftTexturedObject.geometry.parameters.height;
+    const previousGeometry = leftTexturedObject.geometry;
+    leftTexturedObject.geometry =
+        new THREE.PlaneGeometry(width, height);
+    previousGeometry.dispose();
+    updateLeftPanelEditorFields();
+    updateLeftPanelTextureCrop(leftTexturedObject.material.map);
+}
+
+function stopTextureStream(stream = leftTextureStream)
+{
+    if(stream)
+    {
+        stream.getTracks().forEach(track => track.stop());
+        if(leftTextureStream === stream)
+        {
+            leftTextureStream = null;
+        }
+        if(cameraTextureVideo.srcObject === stream)
+        {
+            cameraTextureVideo.srcObject = null;
+        }
+    }
+}
+
+function setLeftPanelTexture(texture, owned = true)
+{
+    if(activeTextureIsOwned)
+    {
+        leftTexturedObject.material.map?.dispose();
+    }
+
+    leftTexturedObject.material.map = texture;
+    leftTexturedObject.material.needsUpdate = true;
+    activeTextureIsOwned = owned;
+    updateLeftPanelTextureCrop(texture);
+}
+
+function createPatternTexture(pattern)
+{
+    const canvas = document.createElement("canvas");
+    const size = 512;
+    canvas.width = size;
+    canvas.height = size;
+    const context = canvas.getContext("2d");
+
+    if(pattern === "checker")
+    {
+        const cellSize = 32;
+        for(let y=0;y<size;y+=cellSize)
+        {
+            for(let x=0;x<size;x+=cellSize)
+            {
+                context.fillStyle =
+                    ((x/cellSize + y/cellSize) % 2 === 0)
+                        ? "#f5f5f5"
+                        : "#222222";
+                context.fillRect(x, y, cellSize, cellSize);
+            }
+        }
+    }
+    else if(pattern === "stripes")
+    {
+        context.fillStyle = "#f5f5f5";
+        context.fillRect(0, 0, size, size);
+        context.fillStyle = "#2525c7";
+        for(let x=-size;x<size*2;x+=48)
+        {
+            context.save();
+            context.translate(x, 0);
+            context.rotate(-Math.PI/4);
+            context.fillRect(0, -size, 20, size*3);
+            context.restore();
+        }
+    }
+    else
+    {
+        const gradient =
+            context.createLinearGradient(0, 0, size, size);
+        gradient.addColorStop(0, "#ff3b30");
+        gradient.addColorStop(0.5, "#34c759");
+        gradient.addColorStop(1, "#007aff");
+        context.fillStyle = gradient;
+        context.fillRect(0, 0, size, size);
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    return texture;
+}
+
+async function selectLeftPanelTexture()
+{
+    const selectionVersion = ++textureSelectionVersion;
+    stopTextureStream();
+    const textureType = leftTextureSelect.value;
+
+    if(textureType === "image")
+    {
+        textureImageFile.hidden = false;
+        textureStatus.textContent =
+            "Choose an image file to use as the panel texture.";
+        return;
+    }
+    textureImageFile.hidden = true;
+
+    if(textureType === "camera")
+    {
+        if(!navigator.mediaDevices?.getUserMedia)
+        {
+            textureStatus.textContent =
+                "Camera access requires HTTPS or localhost and a supported browser.";
+            return;
+        }
+
+        textureStatus.textContent = "Requesting device camera access...";
+        let stream = null;
+        try
+        {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video:true,
+                audio:false
+            });
+            if(selectionVersion !== textureSelectionVersion)
+            {
+                stopTextureStream(stream);
+                return;
+            }
+
+            leftTextureStream = stream;
+            cameraTextureVideo.srcObject = stream;
+            await cameraTextureVideo.play();
+            if(selectionVersion !== textureSelectionVersion)
+            {
+                stopTextureStream(stream);
+                return;
+            }
+
+            const texture =
+                new THREE.VideoTexture(cameraTextureVideo);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            setLeftPanelTexture(texture);
+            textureStatus.textContent =
+                "Using live device camera. Choose another texture to stop it.";
+        }
+        catch(error)
+        {
+            if(stream)
+            {
+                stopTextureStream(stream);
+            }
+            if(selectionVersion === textureSelectionVersion)
+            {
+                textureStatus.textContent =
+                    `Could not start device camera: ${error.message}`;
+            }
+        }
+        return;
+    }
+
+    if(textureType === "random")
+    {
+        setLeftPanelTexture(createRandomTexture(0x13579bdf));
+        textureStatus.textContent = "Using random texture.";
+        return;
+    }
+
+    setLeftPanelTexture(createPatternTexture(textureType));
+    textureStatus.textContent =
+        `Using ${leftTextureSelect.selectedOptions[0].textContent.toLowerCase()} pattern.`;
+}
+
+leftTextureSelect.addEventListener(
+    "change",
+    selectLeftPanelTexture
+);
+
+textureImageFile.addEventListener(
+    "change",
+    () =>
+    {
+        const file = textureImageFile.files[0];
+        if(!file)
+        {
+            return;
+        }
+
+        const selectionVersion = ++textureSelectionVersion;
+        stopTextureStream();
+        textureStatus.textContent = `Loading ${file.name}...`;
+        const imageUrl = URL.createObjectURL(file);
+        new THREE.TextureLoader().load(
+            imageUrl,
+            texture =>
+            {
+                URL.revokeObjectURL(imageUrl);
+                if(selectionVersion !== textureSelectionVersion)
+                {
+                    texture.dispose();
+                    return;
+                }
+
+                texture.colorSpace = THREE.SRGBColorSpace;
+                setLeftPanelTexture(texture);
+                textureStatus.textContent = `Using ${file.name}.`;
+            },
+            undefined,
+            error =>
+            {
+                URL.revokeObjectURL(imageUrl);
+                if(selectionVersion === textureSelectionVersion)
+                {
+                    textureStatus.textContent =
+                        `Could not load ${file.name}: ${error.message || "unsupported image file"}.`;
+                }
+            }
+        );
+    }
+);
+
+window.addEventListener(
+    "beforeunload",
+    () => stopTextureStream()
+);
+
+["loadedmetadata", "resize"].forEach(
+    eventName =>
+    {
+        cameraTextureVideo.addEventListener(
+            eventName,
+            () =>
+            {
+                if(leftTexturedObject.material.map?.image === cameraTextureVideo)
+                {
+                    updateLeftPanelTextureCrop(
+                        leftTexturedObject.material.map
+                    );
+                }
+            }
+        );
+    }
+);
+
+leftPanelWidthInput.addEventListener(
+    "change",
+    () => setLeftPanelSize("width", Number(leftPanelWidthInput.value))
+);
+leftPanelHeightInput.addEventListener(
+    "change",
+    () => setLeftPanelSize("height", Number(leftPanelHeightInput.value))
+);
+
+document
+    .querySelectorAll("[data-panel-position]")
+    .forEach(input =>
+    {
+        input.addEventListener(
+            "change",
+            () =>
+            {
+                const value = Number(input.value);
+                if(!Number.isFinite(value))
+                {
+                    updateLeftPanelEditorFields();
+                    return;
+                }
+
+                leftTexturedObject.position[input.dataset.panelPosition] =
+                    value;
+                leftTexturedObject.userData.manuallyPositioned = true;
+                updateLeftPanelEditorFields();
+            }
+        );
+    });
 
 ///////////////////////////////////////////////////////////////////////////
 // scene editor
@@ -759,6 +1387,19 @@ function updateTransformFields(object)
 function selectEditableObject(object)
 {
     selectedObject = object;
+    const isLeftPanel = object === leftTexturedObject;
+    leftPanelEditor.hidden = !isLeftPanel;
+    document.getElementById("transformPositionRow").hidden = isLeftPanel;
+    document.getElementById("transformScaleRow").hidden = isLeftPanel;
+    const scaleModeButton =
+        document.querySelector('[data-transform-mode="scale"]');
+    scaleModeButton.hidden = isLeftPanel;
+
+    if(isLeftPanel && transformControls.getMode() === "scale")
+    {
+        transformControls.setMode("translate");
+    }
+
     if(object)
     {
         transformControls.attach(object);
@@ -773,6 +1414,10 @@ function selectEditableObject(object)
         editorHint.textContent = "Select an object to edit it.";
     }
     updateTransformFields(object);
+    if(isLeftPanel)
+    {
+        updateLeftPanelEditorFields();
+    }
 }
 
 [box, sphere, planeA, leftTexturedObject].forEach(
@@ -781,13 +1426,12 @@ function selectEditableObject(object)
         const name = [
             "Box",
             "Sphere",
-            "Reference plane",
+            "Plane",
             "Image panel"
         ][index];
         registerEditableObject(object, name);
     }
 );
-sceneObjectsSelect.selectedIndex = -1;
 
 sceneObjectsSelect.addEventListener(
     "change",
@@ -798,6 +1442,7 @@ sceneObjectsSelect.addEventListener(
         );
     }
 );
+selectEditableObject(sphere);
 
 document
     .querySelectorAll("[data-transform-mode]")
@@ -816,6 +1461,7 @@ transformControls.addEventListener(
         if(selectedObject === leftTexturedObject)
         {
             selectedObject.userData.manuallyPositioned = true;
+            updateLeftPanelEditorFields();
         }
         updateTransformFields(selectedObject);
     }
@@ -861,6 +1507,10 @@ document
                 }
                 selectedObject.updateMatrixWorld();
                 updateTransformFields(selectedObject);
+                if(selectedObject === leftTexturedObject)
+                {
+                    updateLeftPanelEditorFields();
+                }
             }
         );
     });
@@ -1076,7 +1726,7 @@ function createCameraLabel(text, color)
     );
 
     label.scale.set(1.6, 0.4, 1);
-    label.layers.set(1);
+    label.layers.set(2);
     return label;
 }
 
@@ -1086,8 +1736,8 @@ const projectorLabel =
     createCameraLabel("Projector", "#ff6666");
 
 scene.add(cameraLabel, projectorLabel);
-observerCamera.layers.enable(1);
-observerPreviewCamera.layers.enable(1);
+observerCamera.layers.enable(2);
+observerPreviewCamera.layers.enable(2);
 
 ///////////////////////////////////////////////////////////////////////////
 // baseline UI
@@ -1326,7 +1976,13 @@ function animate()
     const previewCamera =
         captureIsMain ? observerPreviewCamera : captureCamera;
 
+    transformControls.camera = mainCamera;
     renderer.render(scene, mainCamera);
+
+    renderer.autoClear = false;
+    renderer.clearDepth();
+    renderer.render(transformControlsScene, mainCamera);
+    renderer.autoClear = true;
 
     const previewBounds =
         capturePreview.getBoundingClientRect();
