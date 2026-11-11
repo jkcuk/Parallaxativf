@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Misfeedback: Camera–Projector Feedback Experiment</title>
+<title>Parallaxative: Camera–projector video feedback creates autostereograms</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='40' fill='%23101010'/%3E%3C/svg%3E">
 <script type="importmap">
 {
@@ -466,34 +466,113 @@ const imageContextMenu =
 const imageContextStatus =
     document.getElementById("imageContextStatus");
 
+function isImageContextTarget(target)
+{
+    return target === renderer.domElement ||
+        document.getElementById("capturePreview").contains(target);
+}
+
 function closeImageContextMenu()
 {
     imageContextMenu.hidden = true;
 }
 
+function showImageContextMenu(clientX, clientY)
+{
+    imageContextStatus.textContent = "";
+    imageContextMenu.hidden = false;
+    imageContextMenu.style.left = `${clientX}px`;
+    imageContextMenu.style.top = `${clientY}px`;
+
+    const bounds = imageContextMenu.getBoundingClientRect();
+    imageContextMenu.style.left =
+        `${Math.max(8, Math.min(clientX, window.innerWidth - bounds.width - 8))}px`;
+    imageContextMenu.style.top =
+        `${Math.max(8, Math.min(clientY, window.innerHeight - bounds.height - 8))}px`;
+}
+
 function openImageContextMenu(event)
 {
-    const target = event.target;
-    if(target !== renderer.domElement &&
-        !document.getElementById("capturePreview").contains(target))
+    if(!isImageContextTarget(event.target))
     {
         return;
     }
 
     event.preventDefault();
-    imageContextStatus.textContent = "";
-    imageContextMenu.hidden = false;
-    imageContextMenu.style.left = `${event.clientX}px`;
-    imageContextMenu.style.top = `${event.clientY}px`;
-
-    const bounds = imageContextMenu.getBoundingClientRect();
-    imageContextMenu.style.left =
-        `${Math.max(8, Math.min(event.clientX, window.innerWidth - bounds.width - 8))}px`;
-    imageContextMenu.style.top =
-        `${Math.max(8, Math.min(event.clientY, window.innerHeight - bounds.height - 8))}px`;
+    showImageContextMenu(event.clientX, event.clientY);
 }
 
 document.addEventListener("contextmenu", openImageContextMenu);
+let imageContextLongPress = null;
+let suppressPreviewClick = false;
+document.addEventListener(
+    "pointerdown",
+    event =>
+    {
+        if(suppressPreviewClick)
+        {
+            suppressPreviewClick = false;
+        }
+
+        if(event.pointerType !== "touch" ||
+            !isImageContextTarget(event.target))
+        {
+            imageContextLongPress = null;
+            return;
+        }
+
+        const longPress = {
+            pointerId: event.pointerId,
+            target: event.target,
+            x: event.clientX,
+            y: event.clientY
+        };
+        imageContextLongPress = longPress;
+        window.setTimeout(
+            () =>
+            {
+                if(imageContextLongPress !== longPress)
+                {
+                    return;
+                }
+
+                imageContextLongPress = null;
+                suppressPreviewClick =
+                    document.getElementById("capturePreview")
+                        .contains(longPress.target);
+                showImageContextMenu(longPress.x, longPress.y);
+            },
+            500
+        );
+    }
+);
+document.addEventListener(
+    "pointermove",
+    event =>
+    {
+        if(imageContextLongPress?.pointerId === event.pointerId &&
+            Math.hypot(
+                event.clientX - imageContextLongPress.x,
+                event.clientY - imageContextLongPress.y
+            ) > 10)
+        {
+            imageContextLongPress = null;
+        }
+    }
+);
+for(const eventName of ["pointerup", "pointercancel"])
+{
+    document.addEventListener(
+        eventName,
+        event =>
+        {
+            if(imageContextLongPress?.pointerId === event.pointerId)
+            {
+                imageContextLongPress = null;
+            }
+        }
+    );
+}
 document.addEventListener(
     "pointerdown",
     event =>
@@ -2365,7 +2444,16 @@ function toggleMainCamera()
 
 capturePreview.addEventListener(
     "click",
-    toggleMainCamera
+    event =>
+    {
+        if(suppressPreviewClick)
+        {
+            suppressPreviewClick = false;
+            event.preventDefault();
+            return;
+        }
+        toggleMainCamera();
+    }
 );
 
 capturePreview.addEventListener(
