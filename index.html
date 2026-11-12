@@ -278,6 +278,11 @@ label{
                type="checkbox">
         Projector on
     </label>
+    <div class="editorActions" aria-label="Observer camera position">
+        <button id="viewFromCamera" type="button">View from camera</button>
+        <button id="viewFromProjector" type="button">View from projector</button>
+        <button id="resetObserverCamera" type="button">Reset observer view</button>
+    </div>
     <fieldset>
         <legend>Projector source</legend>
         <label>
@@ -710,7 +715,9 @@ const observerCamera =
         100
     );
 
-observerCamera.position.set(6,4,-10);
+const initialObserverCameraPosition =
+    new THREE.Vector3(6,4,-10);
+observerCamera.position.copy(initialObserverCameraPosition);
 observerCamera.lookAt(0,0,15);
 
 const controls =
@@ -2796,6 +2803,62 @@ function toggleMainCamera()
     );
 }
 
+let observerCameraMove = null;
+
+function moveObserverCameraBeside(sourceCamera, marker)
+{
+    sourceCamera.updateMatrixWorld(true);
+    const destinationTarget = sourceCamera.position.clone();
+    const destinationPosition = destinationTarget.clone().addScaledVector(
+        sourceCamera.getWorldDirection(new THREE.Vector3()),
+        marker.geometry.parameters.radius + observerCamera.near + 0.02
+    );
+    moveObserverCameraTo(destinationPosition, destinationTarget);
+}
+
+function moveObserverCameraTo(destinationPosition, destinationTarget)
+{
+    if(captureIsMain)
+    {
+        toggleMainCamera();
+    }
+
+    observerCameraMove = {
+        startPosition: observerCamera.position.clone(),
+        startTarget: controls.target.clone(),
+        destinationPosition,
+        destinationTarget,
+        startTime: null,
+        controlsEnabled:
+            observerCameraMove?.controlsEnabled ?? controls.enabled
+    };
+    controls.enabled = false;
+}
+
+document
+    .getElementById("viewFromCamera")
+    .addEventListener(
+        "click",
+        () => moveObserverCameraBeside(captureCamera, cameraMarker)
+    );
+
+document
+    .getElementById("viewFromProjector")
+    .addEventListener(
+        "click",
+        () => moveObserverCameraBeside(projector, projectorMarker)
+    );
+
+document
+    .getElementById("resetObserverCamera")
+    .addEventListener(
+        "click",
+        () => moveObserverCameraTo(
+            initialObserverCameraPosition.clone(),
+            controls.target.clone()
+        )
+    );
+
 capturePreview.addEventListener(
     "click",
     event =>
@@ -2954,6 +3017,37 @@ updateFeedbackFrameDelay();
 function animate(timestamp)
 {
     requestAnimationFrame(animate);
+
+    if(observerCameraMove)
+    {
+        if(observerCameraMove.startTime === null)
+        {
+            observerCameraMove.startTime = timestamp;
+        }
+
+        const progress = Math.min(
+            1,
+            (timestamp - observerCameraMove.startTime)/1000
+        );
+        const easedProgress =
+            progress*progress*(3 - 2*progress);
+        observerCamera.position.lerpVectors(
+            observerCameraMove.startPosition,
+            observerCameraMove.destinationPosition,
+            easedProgress
+        );
+        // controls.target.lerpVectors(
+        //     observerCameraMove.startTarget,
+        //     observerCameraMove.destinationTarget,
+        //     easedProgress
+        // );
+
+        if(progress === 1)
+        {
+            controls.enabled = observerCameraMove.controlsEnabled;
+            observerCameraMove = null;
+        }
+    }
 
     // if(resetFeedbackRequested)
     // {
