@@ -1231,311 +1231,350 @@ function createHeadObject()
     return head;
 }
 
-function createPotatoHead(radius = 1) {
+// 
 
+function createPotatoHead(radius = 1)
+{
     const potatoHead = new THREE.Group();
 
-    //
-    // Materials
-    //
+    function cylinderBetweenGeometry(p1, p2, r)
+    {
+        const dir = new THREE.Vector3().subVectors(p2, p1);
+        const len = dir.length();
 
-    const skinMat = new THREE.MeshPhongMaterial({
-        color: 0xe0c090,
-        shininess: 100
-    });
+        const geometry =
+            new THREE.CylinderGeometry(r, r, len, 16);
 
-    const blueMat = new THREE.MeshPhongMaterial({
-        color: 0x2060ff
-    });
+        const position =
+            new THREE.Vector3()
+                .addVectors(p1, p2)
+                .multiplyScalar(0.5);
 
-    const blackMat = new THREE.MeshPhongMaterial({
-        color: 0x101010
-    });
+        const quaternion =
+            new THREE.Quaternion()
+                .setFromUnitVectors(
+                    new THREE.Vector3(0, 1, 0),
+                    dir.normalize()
+                );
 
-    const lipMat = new THREE.MeshPhongMaterial({
-        color: 0xdd2020,
-        shininess: 100
-    });
+        return {
+            geometry,
+            position,
+            quaternion
+        };
+    }
 
-    const whiteMat = new THREE.MeshPhongMaterial({
-        color: 0xffffff
-    });
-
-    //
-    // Head
-    //
-
-    const head = new THREE.Mesh(
-        new THREE.SphereGeometry(radius, 64, 32),
-         createFeedbackMaterial() // skinMat
-    );
-    potatoHead.add(head);
-    registerProjectorObject(head);
-
-    //
-    // Cap top
-    //
-
-    const capTop = new THREE.Mesh(
-        new THREE.SphereGeometry(
-            1.03 * radius,
-            32,
-            16,
-            0,
-            2 * Math.PI,
-            0,
-            0.34 * Math.PI
-        ),
-        createFeedbackMaterial()    // blueMat
-    );
-
-    capTop.position.set(
-        0 * radius, // 0.1736 * radius,
-        0 * radius, // 0.6333 * radius,
-        0 * radius // -0.5468 * radius
-    );
-
-    capTop.quaternion.setFromUnitVectors(
-        new THREE.Vector3(0, 1, 0),
+    const visorNormal =
         new THREE.Vector3(
             0.1677,
             0.9513,
             0.2588
-        ).normalize()
-    );
+        ).normalize();
 
-    potatoHead.add(capTop);
-    registerProjectorObject(capTop);
+    const parts = [
 
-    //
-    // Visor
-    //
+        //
+        // Head
+        //
+        {
+            geometry:
+                new THREE.SphereGeometry(
+                    radius,
+                    64,
+                    32
+                )
+        },
 
-    const visor = new THREE.Mesh(
-        new THREE.CylinderGeometry(
-            0.7 * radius,
-            0.7 * radius,
-            0.05 * radius,
-            32
-        ),
-        createFeedbackMaterial() // blueMat
-    );
+        //
+        // Cap top
+        //
+        {
+            geometry:
+                new THREE.SphereGeometry(
+                    1.03 * radius,
+                    32,
+                    16,
+                    0,
+                    2 * Math.PI,
+                    0,
+                    0.34 * Math.PI
+                ),
+            quaternion:
+                new THREE.Quaternion()
+                    .setFromUnitVectors(
+                        new THREE.Vector3(0, 1, 0),
+                        visorNormal
+                    )
+        },
 
-    visor.position.set(
-        0.1736 * radius,
-        0.6333 * radius,
-        -0.5468 * radius
-    );
+        //
+        // Visor
+        //
+        {
+            geometry:
+                new THREE.CylinderGeometry(
+                    0.7 * radius,
+                    0.7 * radius,
+                    0.05 * radius,
+                    32
+                ),
+            position:
+                new THREE.Vector3(
+                    0.1736 * radius,
+                    0.6333 * radius,
+                    -0.5468 * radius
+                ),
+            quaternion:
+                new THREE.Quaternion()
+                    .setFromUnitVectors(
+                        new THREE.Vector3(0, 1, 0),
+                        visorNormal
+                    )
+        },
 
-    const visorNormal = new THREE.Vector3(
-        0.1677,
-        0.9513,
-        0.2588
-    ).normalize();
+        //
+        // Nose
+        //
+        {
+            geometry:
+                new THREE.SphereGeometry(
+                    0.2 * radius,
+                    32,
+                    16
+                ),
+            position:
+                new THREE.Vector3(
+                    0,
+                    0,
+                    -1.0 * radius
+                )
+        },
 
-    visor.quaternion.setFromUnitVectors(
-        new THREE.Vector3(0, 1, 0),
-        visorNormal
-    );
+        //
+        // Left eyeball
+        //
+        {
+            geometry:
+                new THREE.SphereGeometry(
+                    0.15 * radius,
+                    32,
+                    16
+                ),
+            position:
+                new THREE.Vector3(
+                    -0.25 * radius,
+                     0.25 * radius,
+                    -0.9 * radius
+                )
+        },
 
-    potatoHead.add(visor);
-    registerProjectorObject(visor);
-    //
-    // Nose
-    //
+        //
+        // Left pupil
+        //
+        {
+            geometry:
+                new THREE.SphereGeometry(
+                    0.05 * radius,
+                    16,
+                    16
+                ),
+            position:
+                new THREE.Vector3(
+                    -0.25 * radius,
+                     0.25 * radius,
+                    -1.02 * radius
+                )
+        },
 
-    const nose = new THREE.Mesh(
-        new THREE.SphereGeometry(0.2 * radius, 32, 16),
-        createFeedbackMaterial() // skinMat
-    );
+        //
+        // Right eyeball
+        //
+        {
+            geometry:
+                new THREE.SphereGeometry(
+                    0.15 * radius,
+                    32,
+                    16
+                ),
+            position:
+                new THREE.Vector3(
+                     0.25 * radius,
+                     0.25 * radius,
+                    -0.9 * radius
+                )
+        },
 
-    nose.position.set(
-        0,
-        0,
-        -1.0 * radius
-    );
+        //
+        // Right pupil
+        //
+        {
+            geometry:
+                new THREE.SphereGeometry(
+                    0.05 * radius,
+                    16,
+                    16
+                ),
+            position:
+                new THREE.Vector3(
+                     0.25 * radius,
+                     0.25 * radius,
+                    -1.02 * radius
+                )
+        },
 
-    potatoHead.add(nose);
-    registerProjectorObject(nose);
-    //
-    // Eyes
-    //
-
-    function makeEye(position) {
-
-        const eye = new THREE.Group();
-
-        const eyeball = new THREE.Mesh(
-            new THREE.SphereGeometry(0.15 * radius, 32, 16),
-            createFeedbackMaterial() // whiteMat
-        );
-
-        eye.add(eyeball);
-        registerProjectorObject(eyeball);
-
-        const pupil = new THREE.Mesh(
-            new THREE.SphereGeometry(0.05 * radius, 16, 16),
-            createFeedbackMaterial() // blackMat
-        );
-
-        pupil.position.z = -0.12 * radius;
-        eye.add(pupil);
-        registerProjectorObject(pupil);
-
-        eye.position.copy(position);
-
-        return eye;
-    }
-
-    potatoHead.add(
-        makeEye(
-            new THREE.Vector3(
-                -0.25 * radius,
-                 0.25 * radius,
-                -0.9 * radius
-            )
-        )
-    );
-
-    potatoHead.add(
-        makeEye(
-            new THREE.Vector3(
-                 0.25 * radius,
-                 0.25 * radius,
-                -0.9 * radius
-            )
-        )
-    );
-
-    //
-    // Helper for lips and eyebrows
-    //
-
-    function cylinderBetween(p1, p2, r, material) {
-
-        const dir = new THREE.Vector3().subVectors(p2, p1);
-        const len = dir.length();
-
-        const mesh = new THREE.Mesh(
-            new THREE.CylinderGeometry(r, r, len, 16),
-             createFeedbackMaterial() // material
-        );
-
-        mesh.position.copy(
-            new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5)
-        );
-
-        mesh.quaternion.setFromUnitVectors(
-            new THREE.Vector3(0, 1, 0),
-            dir.normalize()
-        );
-
-        registerProjectorObject(mesh);
-        return mesh;
-    }
-
-    //
-    // Eyebrows
-    //
-
-    potatoHead.add(
-        cylinderBetween(
-            new THREE.Vector3(
+        //
+        // Left eyebrow
+        //
+        (() => {
+            const p1 = new THREE.Vector3(
                 -0.45 * radius,
                  0.50 * radius,
                 -0.85 * radius
-            ),
-            new THREE.Vector3(
+            );
+
+            const p2 = new THREE.Vector3(
                 -0.05 * radius,
                  0.55 * radius,
                 -0.90 * radius
-            ),
-            0.025 * radius,
-            createFeedbackMaterial() // blackMat
-        )
-    );
+            );
 
-    potatoHead.add(
-        cylinderBetween(
-                 new THREE.Vector3(
+            return cylinderBetweenGeometry(
+                p1,
+                p2,
+                0.025 * radius
+            );
+        })(),
+
+        //
+        // Right eyebrow
+        //
+        (() => {
+            const p1 = new THREE.Vector3(
                  0.45 * radius,
                  0.50 * radius,
                 -0.85 * radius
-            ),
-            new THREE.Vector3(
+            );
+
+            const p2 = new THREE.Vector3(
                  0.05 * radius,
                  0.55 * radius,
                 -0.90 * radius
-            ),
-            0.025 * radius,
-            blackMat
-        )
-    );
+            );
 
-    //
-    // Lips
-    //
+            return cylinderBetweenGeometry(
+                p1,
+                p2,
+                0.025 * radius
+            );
+        })(),
 
-    potatoHead.add(
-        cylinderBetween(
-            new THREE.Vector3(
+        //
+        // Upper lip
+        //
+        (() => {
+            const p1 = new THREE.Vector3(
                 -0.33 * radius,
                 -0.25 * radius,
                 -1.0 * radius
-            ),
-            new THREE.Vector3(
+            );
+
+            const p2 = new THREE.Vector3(
                  0.33 * radius,
                 -0.25 * radius,
                 -1.0 * radius
-            ),
-            0.05 * radius,
-            lipMat
-        )
-    );
+            );
 
-    potatoHead.add(
-        cylinderBetween(
-            new THREE.Vector3(
+            return cylinderBetweenGeometry(
+                p1,
+                p2,
+                0.05 * radius
+            );
+        })(),
+
+        //
+        // Lower lip
+        //
+        (() => {
+            const p1 = new THREE.Vector3(
                 -0.33 * radius,
                 -0.35 * radius,
                 -1.0 * radius
-            ),
-            new THREE.Vector3(
+            );
+
+            const p2 = new THREE.Vector3(
                  0.33 * radius,
                 -0.35 * radius,
                 -1.0 * radius
-            ),
-            0.05 * radius,
-            lipMat
-        )
-    );
+            );
 
-    //
-    // Ears
-    //
+            return cylinderBetweenGeometry(
+                p1,
+                p2,
+                0.05 * radius
+            );
+        })(),
 
-    function makeEar(x) {
+        //
+        // Left ear
+        //
+        {
+            geometry:
+                new THREE.CircleGeometry(
+                    0.2 * radius,
+                    32
+                ),
+            position:
+                new THREE.Vector3(
+                    -1 * radius,
+                    0,
+                    0
+                )
+        },
 
-        const ear = new THREE.Mesh(
-            new THREE.CircleGeometry(
-                0.2 * radius,
-                32
-            ),
-            createFeedbackMaterial(THREE.DoubleSide) // skinMat
-        );
+        //
+        // Right ear
+        //
+        {
+            geometry:
+                new THREE.CircleGeometry(
+                    0.2 * radius,
+                    32
+                ),
+            position:
+                new THREE.Vector3(
+                    1 * radius,
+                    0,
+                    0
+                )
+        }
+    ];
 
-        ear.position.set(
-            x * radius,
-            0,
-            0
-        );
+    for(const part of parts)
+    {
+        const mesh =
+            new THREE.Mesh(
+                part.geometry,
+                createFeedbackMaterial()
+            );
 
-        registerProjectorObject(ear);
-        return ear;
+        if(part.position)
+        {
+            mesh.position.copy(part.position);
+        }
+
+        if(part.quaternion)
+        {
+            mesh.quaternion.copy(part.quaternion);
+        }
+
+        if(part.scale)
+        {
+            mesh.scale.set(...part.scale);
+        }
+
+        potatoHead.add(mesh);
+        registerProjectorObject(mesh);
     }
-
-    potatoHead.add(makeEar(-1));
-    potatoHead.add(makeEar(+1));
 
     return potatoHead;
 }
@@ -1575,16 +1614,18 @@ function setProjectorEnabled(enabled)
 // scene geometry
 ///////////////////////////////////////////////////////////////////////////
 
-const initialHead = createPotatoHead(5);// createHeadObject();
-initialHead.position.set(0, 0, 22);
+const initialHead = createPotatoHead(1);// createHeadObject();
+initialHead.scale.setScalar(5);
+initialHead.position.set(0, 0, 25);
 scene.add(initialHead);
 
 const plane =
     new THREE.Mesh(
-        new THREE.PlaneGeometry(24,24),
+        new THREE.PlaneGeometry(1,1),
         createFeedbackMaterial(THREE.DoubleSide)
     );
 
+plane.scale.set(64, 32, 1);
 plane.position.z = 30;
 
 scene.add(plane);
@@ -1652,24 +1693,24 @@ function getTextureAspect(texture)
         : null;
 }
 
-const leftTexturedObject =
+const texturedObject =
     new THREE.Mesh(
         new THREE.PlaneGeometry(1, 1),
         initialPanelMaterial
     );
 
-leftTexturedObject.scale.set(
+texturedObject.scale.set(
     panelHeight*getTextureAspect(initialPanelMaterial.map),
     panelHeight,
     1
 );
-leftTexturedObject.visible = true;
-leftTexturedObject.position.set(
+texturedObject.visible = true;
+texturedObject.position.set(
     -panelWidth*0.5,
     0,
     zA
 );
-scene.add(leftTexturedObject);
+scene.add(texturedObject);
 
 const leftTextureSelect =
     document.getElementById("leftTextureType");
@@ -1715,10 +1756,10 @@ function updateimagePanelTextureCrop(texture)
     }
 
     const panelAspect =
-        leftTexturedObject.geometry.parameters.width *
-        Math.abs(leftTexturedObject.scale.x) /
-        (leftTexturedObject.geometry.parameters.height *
-            Math.abs(leftTexturedObject.scale.y));
+        texturedObject.geometry.parameters.width *
+        Math.abs(texturedObject.scale.x) /
+        (texturedObject.geometry.parameters.height *
+            Math.abs(texturedObject.scale.y));
     const repeatX =
         textureAspect > panelAspect
             ? panelAspect/textureAspect
@@ -1745,7 +1786,7 @@ function updateimagePanelEditorFields()
         .forEach(input =>
         {
             input.value =
-                leftTexturedObject.position[input.dataset.panelPosition]
+                texturedObject.position[input.dataset.panelPosition]
                     .toFixed(2);
         });
 }
@@ -1770,11 +1811,11 @@ function setimagePanelTexture(texture, owned = true)
 {
     if(activeTextureIsOwned)
     {
-        leftTexturedObject.material.map?.dispose();
+        texturedObject.material.map?.dispose();
     }
 
-    leftTexturedObject.material.map = texture;
-    leftTexturedObject.material.needsUpdate = true;
+    texturedObject.material.map = texture;
+    texturedObject.material.needsUpdate = true;
     activeTextureIsOwned = owned;
     updateimagePanelTextureCrop(texture);
 }
@@ -2155,10 +2196,10 @@ window.addEventListener(
             eventName,
             () =>
             {
-                if(leftTexturedObject.material.map?.image === cameraTextureVideo)
+                if(texturedObject.material.map?.image === cameraTextureVideo)
                 {
                     updateimagePanelTextureCrop(
-                        leftTexturedObject.material.map
+                        texturedObject.material.map
                     );
                 }
             }
@@ -2181,9 +2222,9 @@ document
                     return;
                 }
 
-                leftTexturedObject.position[input.dataset.panelPosition] =
+                texturedObject.position[input.dataset.panelPosition] =
                     value;
-                leftTexturedObject.userData.manuallyPositioned = true;
+                texturedObject.userData.manuallyPositioned = true;
                 updateimagePanelEditorFields();
             }
         );
@@ -2335,7 +2376,7 @@ function selectEditableObject(object)
                 );
         }
     );
-    const isimagePanel = object === leftTexturedObject;
+    const isimagePanel = object === texturedObject;
     imagePanelEditor.hidden = !isimagePanel;
     document.getElementById("transformPositionRow").hidden = isimagePanel;
 
@@ -2362,7 +2403,7 @@ function selectEditableObject(object)
     }
 }
 
-[initialHead, plane, leftTexturedObject].forEach(
+[initialHead, plane, texturedObject].forEach(
     (object, index) =>
     {
         const name = [
@@ -2413,7 +2454,7 @@ transformControls.addEventListener(
     "objectChange",
     () =>
     {
-        if(selectedObject === leftTexturedObject)
+        if(selectedObject === texturedObject)
         {
             selectedObject.userData.manuallyPositioned = true;
             updateimagePanelEditorFields();
@@ -2456,14 +2497,14 @@ document
                 else
                 {
                     selectedObject.position[axis] = value;
-                    if(selectedObject === leftTexturedObject)
+                    if(selectedObject === texturedObject)
                     {
                         selectedObject.userData.manuallyPositioned = true;
                     }
                 }
                 selectedObject.updateMatrixWorld();
                 updateTransformFields(selectedObject);
-                if(selectedObject === leftTexturedObject)
+                if(selectedObject === texturedObject)
                 {
                     updateimagePanelEditorFields();
                     if(transform === "scale")
@@ -2492,7 +2533,7 @@ document
 
             if(type === "head")
             {
-                object = createPotatoHead(5);// createHeadObject();
+                object = createPotatoHead(1);
                 name = "Head";
             }
             else if(type === "sphere")
@@ -2502,18 +2543,18 @@ document
             }
             else if(type === "plane")
             {
-                geometry = new THREE.PlaneGeometry(4, 4);
+                geometry = new THREE.PlaneGeometry(1, 1);
                 name = "Plane";
                 materialSide = THREE.DoubleSide;
             }
             else if(type === "cylinder")
             {
-                geometry = new THREE.CylinderGeometry(1, 1, 2, 32);
+                geometry = new THREE.CylinderGeometry(1, 1, 1, 32);
                 name = "Cylinder";
             }
             else
             {
-                geometry = new THREE.BoxGeometry(2, 2, 2);
+                geometry = new THREE.BoxGeometry(1, 1, 1);
                 name = "Box";
             }
 
@@ -2526,7 +2567,7 @@ document
                     );
                 registerProjectorObject(object);
             }
-            object.position.set(0, 0, zA);
+            object.position.set(0, 0, 25);
             name = `${name} ${nextObjectNumber++}`;
             scene.add(object);
             registerEditableObject(object, name);
@@ -2905,9 +2946,9 @@ function updateBaseline()
     );
     updateAutostereogramFrame();
 
-    // leftTexturedObject.position.x =
-    //     leftTexturedObject.userData.manuallyPositioned
-    //         ? leftTexturedObject.position.x
+    // texturedObject.position.x =
+    //     texturedObject.userData.manuallyPositioned
+    //         ? texturedObject.position.x
     //         : captureCamera.position.x + panelWidth*0.75;
     // rightTexturedObject.position.x =
     //     captureCamera.position.x - panelWidth*0.85;
