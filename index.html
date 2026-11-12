@@ -703,6 +703,11 @@ scene.add(lightingTarget);
     scene.add(light);
 });
 
+// z coordinate of reference plane
+const zA = 10;
+
+
+
 ///////////////////////////////////////////////////////////////////////////
 // observer camera
 ///////////////////////////////////////////////////////////////////////////
@@ -718,7 +723,7 @@ const observerCamera =
 const initialObserverCameraPosition =
     new THREE.Vector3(6,4,-10);
 observerCamera.position.copy(initialObserverCameraPosition);
-observerCamera.lookAt(0,0,15);
+observerCamera.lookAt(0,0,zA);
 
 const controls =
     new OrbitControls(
@@ -726,7 +731,7 @@ const controls =
         renderer.domElement
     );
 
-controls.target.set(0,0,15);
+controls.target.set(0,0,zA);
 controls.update();
 
 const transformControls =
@@ -799,8 +804,6 @@ projector.position.set(-0.5,0,0);
 ///////////////////////////////////////////////////////////////////////////
 // reference plane A
 ///////////////////////////////////////////////////////////////////////////
-
-const zA = 10;
 
 const autostereogramFrameGeometry =
     new THREE.BufferGeometry();
@@ -2850,10 +2853,10 @@ function moveObserverCameraBeside(sourceCamera, marker)
 {
     sourceCamera.updateMatrixWorld(true);
     const destinationTarget = sourceCamera.position.clone();
-    const destinationPosition = destinationTarget.clone().addScaledVector(
-        sourceCamera.getWorldDirection(new THREE.Vector3()),
-        marker.geometry.parameters.radius + observerCamera.near + 0.02
-    );
+    const destinationPosition = destinationTarget.clone(); // .addScaledVector(
+    //     sourceCamera.getWorldDirection(new THREE.Vector3()),
+    //     marker.geometry.parameters.radius + observerCamera.near + 0.02
+    // );
     moveObserverCameraTo(destinationPosition, destinationTarget);
 }
 
