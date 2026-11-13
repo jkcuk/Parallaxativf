@@ -2800,9 +2800,15 @@ renderer.domElement.addEventListener(
         }
         pointerDownPosition = {
             x: event.clientX,
-            y: event.clientY
+            y: event.clientY,
+            pointerId: event.pointerId
         };
     }
+);
+
+renderer.domElement.addEventListener(
+    "contextmenu",
+    () => pointerDownPosition = null
 );
 
 const editorRaycaster = new THREE.Raycaster();
@@ -2811,7 +2817,9 @@ renderer.domElement.addEventListener(
     "pointerup",
     event =>
     {
-        if(!pointerDownPosition ||
+        if(event.button !== 0 ||
+            !pointerDownPosition ||
+            event.pointerId !== pointerDownPosition.pointerId ||
             transformControls.dragging ||
             Math.hypot(
                 event.clientX - pointerDownPosition.x,
@@ -2845,6 +2853,11 @@ renderer.domElement.addEventListener(
         }
         selectEditableObject(object);
     }
+);
+
+renderer.domElement.addEventListener(
+    "pointercancel",
+    () => pointerDownPosition = null
 );
 
 document.addEventListener(
