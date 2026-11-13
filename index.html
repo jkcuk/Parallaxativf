@@ -310,6 +310,12 @@ label{
             step="0.01">
         <span id="baselineValue">2.00</span>
     </label>
+    <label>
+        <input id="keystoneAdjustment"
+               type="checkbox"
+               checked>
+        Keystone adjustment
+    </label>
 
     <div id="cameraFeedbackControls">
         <label>
@@ -1022,11 +1028,18 @@ const cameraClipMatrix =
 const projectorClipMatrix =
     new THREE.Matrix4();
 const keystonePlaneZ = 10;
+const keystoneAdjustmentToggle =
+    document.getElementById("keystoneAdjustment");
 
 function updateCaptureCameraCoverage()
 {
-    // Fit the projector's full reference-plane footprint into the capture view.
     captureCamera.updateProjectionMatrix();
+    if(!keystoneAdjustmentToggle.checked)
+    {
+        return;
+    }
+
+    // Fit the projector's full reference-plane footprint into the capture view.
     captureCamera.updateMatrixWorld(true);
     projector.updateMatrixWorld(true);
 
@@ -1079,6 +1092,12 @@ function updateCaptureCameraCoverage()
 
 function updateCameraKeystoneTransform()
 {
+    if(!keystoneAdjustmentToggle.checked)
+    {
+        projectionUniforms.cameraKeystoneTransform.value.identity();
+        return;
+    }
+
     captureCamera.updateMatrixWorld(true);
     projector.updateMatrixWorld(true);
     cameraClipMatrix.multiplyMatrices(
@@ -1400,6 +1419,11 @@ function createPotatoHead(radius = 1)
             0.9513,
             0.2588
         ).normalize();
+    const earOrientation =
+        new THREE.Quaternion().setFromUnitVectors(
+            new THREE.Vector3(0, 1, 0),
+            new THREE.Vector3(0, 0, 1)
+        );
 
     const parts = [
 
@@ -1649,17 +1673,19 @@ function createPotatoHead(radius = 1)
         //
         {
             geometry:
-                new THREE.CircleGeometry(
+                new THREE.CylinderGeometry(
                     0.2 * radius,
+                    0.2 * radius,
+                    0.05 * radius,
                     32
                 ),
-            side: THREE.DoubleSide,
             position:
                 new THREE.Vector3(
                     -1 * radius,
                     0,
                     0
-                )
+                ),
+            quaternion: earOrientation
         },
 
         //
@@ -1667,17 +1693,19 @@ function createPotatoHead(radius = 1)
         //
         {
             geometry:
-                new THREE.CircleGeometry(
+                new THREE.CylinderGeometry(
                     0.2 * radius,
+                    0.2 * radius,
+                    0.05 * radius,
                     32
                 ),
-            side: THREE.DoubleSide,
             position:
                 new THREE.Vector3(
                     1 * radius,
                     0,
                     0
-                )
+                ),
+            quaternion: earOrientation
         }
     ];
 
@@ -3103,6 +3131,15 @@ function updateCurrentFactor()
 baselineSlider.addEventListener(
     "input",
     updateBaseline
+);
+
+keystoneAdjustmentToggle.addEventListener(
+    "change",
+    () =>
+    {
+        lastFeedbackFrameTime = null;
+        updateBaseline();
+    }
 );
 
 updateBaseline();
