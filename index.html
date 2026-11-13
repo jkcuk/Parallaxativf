@@ -1653,6 +1653,7 @@ function createPotatoHead(radius = 1)
                     0.2 * radius,
                     32
                 ),
+            side: THREE.DoubleSide,
             position:
                 new THREE.Vector3(
                     -1 * radius,
@@ -1670,6 +1671,7 @@ function createPotatoHead(radius = 1)
                     0.2 * radius,
                     32
                 ),
+            side: THREE.DoubleSide,
             position:
                 new THREE.Vector3(
                     1 * radius,
@@ -1684,7 +1686,7 @@ function createPotatoHead(radius = 1)
         const mesh =
             new THREE.Mesh(
                 part.geometry,
-                createFeedbackMaterial()
+                createFeedbackMaterial(part.side ?? THREE.FrontSide)
             );
 
         if(part.position)
