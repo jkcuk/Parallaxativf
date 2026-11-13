@@ -46,6 +46,45 @@ canvas{
     font-weight:bold;
 }
 
+#ui > summary,
+#sceneEditor > summary{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+}
+
+.panelDragHandle{
+    flex:none;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:26px;
+    height:26px;
+    border:1px solid #999;
+    border-radius:4px;
+    color:#444;
+    background:rgba(255,255,255,0.65);
+    cursor:grab;
+    touch-action:none;
+    user-select:none;
+}
+
+.panelDragHandle svg{
+    width:18px;
+    height:18px;
+    fill:currentColor;
+}
+
+.panelDragHandle:active{
+    cursor:grabbing;
+}
+
+.panelDragHandle:focus-visible{
+    outline:2px solid #2459a6;
+    outline-offset:2px;
+}
+
 #ui > summary{
     min-width:150px;
 }
@@ -197,39 +236,6 @@ canvas{
     font-size:12px;
 }
 
-#capturePreview{
-    position:fixed;
-    left:12px;
-    bottom:12px;
-    width:min(240px, calc(100vw - 24px), calc(100vh - 24px));
-    aspect-ratio:1;
-    box-sizing:border-box;
-    border:2px solid white;
-    box-shadow:0 2px 10px rgba(0,0,0,0.6);
-    z-index:1;
-    cursor:pointer;
-    pointer-events:auto;
-}
-
-#capturePreview canvas{
-    position:absolute;
-    inset:0;
-    width:100%;
-    height:100%;
-}
-
-#capturePreview label{
-    position:absolute;
-    top:6px;
-    left:6px;
-    padding:4px 6px;
-    margin:0;
-    color:white;
-    background:rgba(0,0,0,0.65);
-    border-radius:3px;
-    font-size:12px;
-}
-
 #imageContextMenu{
     position:fixed;
     z-index:3;
@@ -295,7 +301,19 @@ label{
 <body>
 
 <details id="ui" open>
-    <summary>Experiment controls</summary>
+    <summary>
+        <span>Experiment controls</span>
+        <span class="panelDragHandle"
+              data-drag-panel="ui"
+              role="button"
+              tabindex="0"
+              aria-label="Move experiment controls"
+              title="Drag to move">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 2 8.5 5.5h2v5h-5v-2L2 12l3.5 3.5v-2h5v5h-2L12 22l3.5-3.5h-2v-5h5v2L22 12l-3.5-3.5v2h-5v-5h2z"/>
+            </svg>
+        </span>
+    </summary>
     <label>
         <input id="projectorEnabled"
                type="checkbox">
@@ -386,7 +404,19 @@ label{
 </details>
 
 <details id="sceneEditor" open>
-    <summary>Scene editor</summary>
+    <summary>
+        <span>Scene editor</span>
+        <span class="panelDragHandle"
+              data-drag-panel="sceneEditor"
+              role="button"
+              tabindex="0"
+              aria-label="Move scene editor"
+              title="Drag to move">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 2 8.5 5.5h2v5h-5v-2L2 12l3.5 3.5v-2h5v5h-2L12 22l3.5-3.5h-2v-5h5v2L22 12l-3.5-3.5v2h-5v-5h2z"/>
+            </svg>
+        </span>
+    </summary>
     <div class="editorActions">
         <select id="newObjectType" aria-label="New object type">
             <option value="box">Box</option>
@@ -456,13 +486,6 @@ label{
 
 </details>
 
-<div id="capturePreview"
-     role="button"
-     tabindex="0"
-     aria-label="Switch to capture camera view">
-    <label id="previewLabel">Camera</label>
-</div>
-
 <div id="imageContextMenu" role="menu" aria-label="Image actions" hidden>
     <button id="saveCurrentImage" type="button" role="menuitem">Save image...</button>
     <button id="copyCurrentImage" type="button" role="menuitem">Copy image</button>
@@ -493,32 +516,94 @@ renderer.setSize(
 
 document.body.appendChild(renderer.domElement);
 
-const capturePreviewElement =
-    document.getElementById("capturePreview");
-const previewCanvas = document.createElement("canvas");
-capturePreviewElement.appendChild(previewCanvas);
-const previewContext = previewCanvas.getContext("2d");
-if(!previewContext)
+function positionControlPanel(panel, left, top)
 {
-    throw new Error("Could not initialize the camera preview.");
+    const maxLeft = Math.max(0, window.innerWidth - panel.offsetWidth);
+    const maxTop = Math.max(0, window.innerHeight - panel.offsetHeight);
+    panel.style.left = `${Math.max(0, Math.min(left, maxLeft))}px`;
+    panel.style.top = `${Math.max(0, Math.min(top, maxTop))}px`;
+    panel.style.right = "auto";
 }
-const previewRenderTarget =
-    new THREE.WebGLRenderTarget(1, 1);
-previewRenderTarget.texture.colorSpace =
-    renderer.outputColorSpace;
-const linearToSrgbBytes = new Uint8Array(256);
-for(let value = 0; value < linearToSrgbBytes.length; value++)
+
+document.querySelectorAll("[data-drag-panel]").forEach(handle =>
 {
-    const linear = value/255;
-    const srgb = linear <= 0.0031308
-        ? linear*12.92
-        : 1.055*Math.pow(linear, 1/2.4) - 0.055;
-    linearToSrgbBytes[value] = Math.round(srgb*255);
-}
-let previewPixels = new Uint8Array(4);
-let previewImageData = previewContext.createImageData(1, 1);
-let previewRendererWidth = 1;
-let previewRendererHeight = 1;
+    const panel =
+        document.getElementById(handle.dataset.dragPanel);
+    let drag = null;
+
+    handle.addEventListener("pointerdown", event =>
+    {
+        if(event.button !== 0)
+        {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        const bounds = panel.getBoundingClientRect();
+        drag = {
+            pointerId: event.pointerId,
+            offsetX: event.clientX - bounds.left,
+            offsetY: event.clientY - bounds.top
+        };
+        handle.setPointerCapture(event.pointerId);
+    });
+
+    handle.addEventListener("click", event =>
+    {
+        event.preventDefault();
+        event.stopPropagation();
+    });
+
+    handle.addEventListener("pointermove", event =>
+    {
+        if(drag?.pointerId !== event.pointerId)
+        {
+            return;
+        }
+        positionControlPanel(
+            panel,
+            event.clientX - drag.offsetX,
+            event.clientY - drag.offsetY
+        );
+    });
+
+    const finishDrag = event =>
+    {
+        if(drag?.pointerId === event.pointerId)
+        {
+            drag = null;
+        }
+    };
+    handle.addEventListener("pointerup", finishDrag);
+    handle.addEventListener("pointercancel", finishDrag);
+    handle.addEventListener("lostpointercapture", finishDrag);
+
+    handle.addEventListener("keydown", event =>
+    {
+        const step = event.shiftKey ? 50 : 10;
+        const offsets = {
+            ArrowLeft: [-step, 0],
+            ArrowRight: [step, 0],
+            ArrowUp: [0, -step],
+            ArrowDown: [0, step]
+        };
+        const offset = offsets[event.key];
+        if(!offset)
+        {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        const bounds = panel.getBoundingClientRect();
+        positionControlPanel(
+            panel,
+            bounds.left + offset[0],
+            bounds.top + offset[1]
+        );
+    });
+});
 
 const imageContextMenu =
     document.getElementById("imageContextMenu");
@@ -527,8 +612,7 @@ const imageContextStatus =
 
 function isImageContextTarget(target)
 {
-    return target === renderer.domElement ||
-        document.getElementById("capturePreview").contains(target);
+    return target === renderer.domElement;
 }
 
 function closeImageContextMenu()
@@ -563,16 +647,10 @@ function openImageContextMenu(event)
 
 document.addEventListener("contextmenu", openImageContextMenu);
 let imageContextLongPress = null;
-let suppressPreviewClick = false;
 document.addEventListener(
     "pointerdown",
     event =>
     {
-        if(suppressPreviewClick)
-        {
-            suppressPreviewClick = false;
-        }
-
         if(event.pointerType !== "touch" ||
             !isImageContextTarget(event.target))
         {
@@ -582,7 +660,6 @@ document.addEventListener(
 
         const longPress = {
             pointerId: event.pointerId,
-            target: event.target,
             x: event.clientX,
             y: event.clientY
         };
@@ -596,9 +673,6 @@ document.addEventListener(
                 }
 
                 imageContextLongPress = null;
-                suppressPreviewClick =
-                    document.getElementById("capturePreview")
-                        .contains(longPress.target);
                 showImageContextMenu(longPress.x, longPress.y);
             },
             500
@@ -821,25 +895,6 @@ const captureCamera =
     );
 
 captureCamera.position.set(0.5,0,0);
-
-const capturePreviewCamera =
-    captureCamera.clone();
-
-const captureDisplayCamera =
-    new THREE.PerspectiveCamera(
-        captureCamera.fov,
-        window.innerWidth/window.innerHeight,
-        captureCamera.near,
-        captureCamera.far
-    );
-
-const observerPreviewCamera =
-    new THREE.PerspectiveCamera(
-        observerCamera.fov,
-        1,
-        observerCamera.near,
-        observerCamera.far
-    );
 
 ///////////////////////////////////////////////////////////////////////////
 // projector
@@ -2774,9 +2829,7 @@ renderer.domElement.addEventListener(
             (event.clientX - bounds.left)/bounds.width*2 - 1,
             -((event.clientY - bounds.top)/bounds.height)*2 + 1
         );
-        const viewCamera =
-            captureIsMain ? captureDisplayCamera : observerCamera;
-        editorRaycaster.setFromCamera(editorPointer, viewCamera);
+        editorRaycaster.setFromCamera(editorPointer, observerCamera);
         const hits =
             editorRaycaster.intersectObjects(
                 [...editableObjects.values()],
@@ -2886,7 +2939,6 @@ const projectorLabel =
 
 scene.add(cameraLabel, projectorLabel);
 observerCamera.layers.enable(2);
-observerPreviewCamera.layers.enable(2);
 
 ///////////////////////////////////////////////////////////////////////////
 // baseline UI
@@ -2942,27 +2994,6 @@ updateProjectorSourceControls();
 // const resetFeedbackButton =
 //     document.getElementById("resetFeedback");
 
-const capturePreview =
-    document.getElementById("capturePreview");
-
-const previewLabel =
-    document.getElementById("previewLabel");
-
-let captureIsMain = false;
-
-function toggleMainCamera()
-{
-    captureIsMain = !captureIsMain;
-    previewLabel.textContent =
-        captureIsMain ? "Observer camera" : "Camera";
-    capturePreview.setAttribute(
-        "aria-label",
-        captureIsMain
-            ? "Switch to observer camera view"
-            : "Switch to camera view"
-    );
-}
-
 let observerCameraMove = null;
 
 function moveObserverCameraBeside(sourceCamera, marker)
@@ -2978,11 +3009,6 @@ function moveObserverCameraBeside(sourceCamera, marker)
 
 function moveObserverCameraTo(destinationPosition, destinationTarget)
 {
-    if(captureIsMain)
-    {
-        toggleMainCamera();
-    }
-
     observerCameraMove = {
         startPosition: observerCamera.position.clone(),
         startTarget: controls.target.clone(),
@@ -3018,32 +3044,6 @@ document
             controls.target.clone()
         )
     );
-
-capturePreview.addEventListener(
-    "click",
-    event =>
-    {
-        if(suppressPreviewClick)
-        {
-            suppressPreviewClick = false;
-            event.preventDefault();
-            return;
-        }
-        toggleMainCamera();
-    }
-);
-
-capturePreview.addEventListener(
-    "keydown",
-    event =>
-    {
-        if(event.key === "Enter" || event.key === " ")
-        {
-            event.preventDefault();
-            toggleMainCamera();
-        }
-    }
-);
 
 function updateBaseline()
 {
@@ -3302,111 +3302,13 @@ function animate(timestamp)
         window.innerHeight
     );
 
-    captureDisplayCamera.position.copy(captureCamera.position);
-    captureDisplayCamera.quaternion.copy(captureCamera.quaternion);
-    captureDisplayCamera.projectionMatrix
-        .copy(captureCamera.projectionMatrix);
-    captureDisplayCamera.projectionMatrixInverse
-        .copy(captureCamera.projectionMatrixInverse);
-
-    const mainCamera =
-        captureIsMain ? captureDisplayCamera : observerCamera;
-    const previewCamera =
-        captureIsMain ? observerPreviewCamera : capturePreviewCamera;
-
-    transformControls.camera = mainCamera;
-    renderer.render(scene, mainCamera);
+    transformControls.camera = observerCamera;
+    renderer.render(scene, observerCamera);
 
     renderer.autoClear = false;
     renderer.clearDepth();
-    renderer.render(transformControlsScene, mainCamera);
+    renderer.render(transformControlsScene, observerCamera);
     renderer.autoClear = true;
-
-    const previewBounds =
-        capturePreview.getBoundingClientRect();
-    const previewWidth = Math.max(
-        1,
-        Math.round((previewBounds.width - 4)*window.devicePixelRatio)
-    );
-    const previewHeight = Math.max(
-        1,
-        Math.round((previewBounds.height - 4)*window.devicePixelRatio)
-    );
-    if(previewWidth !== previewRendererWidth ||
-        previewHeight !== previewRendererHeight)
-    {
-        previewCanvas.width = previewWidth;
-        previewCanvas.height = previewHeight;
-        previewRenderTarget.setSize(previewWidth, previewHeight);
-        previewPixels = new Uint8Array(previewWidth*previewHeight*4);
-        previewImageData =
-            previewContext.createImageData(previewWidth, previewHeight);
-        previewRendererWidth = previewWidth;
-        previewRendererHeight = previewHeight;
-    }
-
-    if(captureIsMain)
-    {
-        observerPreviewCamera.position.copy(observerCamera.position);
-        observerPreviewCamera.quaternion.copy(observerCamera.quaternion);
-        observerPreviewCamera.aspect =
-            previewWidth/previewHeight;
-        observerPreviewCamera.updateProjectionMatrix();
-    }
-    else
-    {
-        capturePreviewCamera.position.copy(captureCamera.position);
-        capturePreviewCamera.quaternion.copy(captureCamera.quaternion);
-        capturePreviewCamera.aspect =
-            previewWidth/previewHeight;
-        capturePreviewCamera.updateProjectionMatrix();
-    }
-
-    renderer.setRenderTarget(previewRenderTarget);
-    renderer.setViewport(0, 0, previewWidth, previewHeight);
-    renderer.render(scene, previewCamera);
-    renderer.readRenderTargetPixels(
-        previewRenderTarget,
-        0,
-        0,
-        previewWidth,
-        previewHeight,
-        previewPixels
-    );
-    const previewRowSize = previewWidth*4;
-    for(let row = 0; row < previewHeight; row++)
-    {
-        const sourceStart =
-            (previewHeight - row - 1)*previewRowSize;
-        const targetStart = row*previewRowSize;
-        previewImageData.data.set(
-            previewPixels.subarray(
-                sourceStart,
-                sourceStart + previewRowSize
-            ),
-            targetStart
-        );
-        for(let pixel = targetStart;
-            pixel < targetStart + previewRowSize;
-            pixel += 4)
-        {
-            previewImageData.data[pixel] =
-                linearToSrgbBytes[previewImageData.data[pixel]];
-            previewImageData.data[pixel + 1] =
-                linearToSrgbBytes[previewImageData.data[pixel + 1]];
-            previewImageData.data[pixel + 2] =
-                linearToSrgbBytes[previewImageData.data[pixel + 2]];
-        }
-    }
-    previewContext.putImageData(previewImageData, 0, 0);
-
-    renderer.setRenderTarget(null);
-    renderer.setViewport(
-        0,
-        0,
-        window.innerWidth,
-        window.innerHeight
-    );
 
     controls.update();
 }
