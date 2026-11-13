@@ -237,6 +237,7 @@ canvas{
 }
 
 #cameraPreview{
+    display:none;
     position:fixed;
     right:10px;
     bottom:10px;
@@ -387,6 +388,26 @@ label{
             <p id="projectorTextureStatus" aria-live="polite"></p>
         </div>
     </fieldset>
+    <label>
+        Magnification:
+        <input id="projectionMagnification"
+               type="range"
+               min="0.25"
+               max="3"
+               value="1"
+               step="0.01">
+        <span id="projectionMagnificationValue">1.00×</span>
+    </label>
+    <label>
+        Rotation angle:
+        <input id="projectionRotation"
+               type="range"
+               min="-180"
+               max="180"
+               value="0"
+               step="1">
+        <span id="projectionRotationValue">0°</span>
+    </label>
     <label>
         Camera-projector distance:
         <input id="baseline"
@@ -1261,6 +1282,12 @@ const projectionUniforms = {
     textureMode: {
         value: 0
     },
+    magnification: {
+        value: 1
+    },
+    rotation: {
+        value: 0
+    },
     previousFactor: {
         value: 0.5
     },
@@ -1411,6 +1438,8 @@ const projectionMaterial =
             uniform mat3 currentFrameTransform;
             uniform mat3 cameraKeystoneTransform;
             uniform float textureMode;
+            uniform float magnification;
+            uniform float rotation;
             uniform float previousFactor;
             uniform float currentFactor;
 
@@ -1424,16 +1453,37 @@ const projectionMaterial =
                     cameraKeystoneTransform * projectorNdc;
                 vec2 cameraUv =
                     cameraNdc.xy/cameraNdc.z * 0.5 + 0.5;
+                vec2 cameraCentered =
+                    cameraUv - 0.5;
+                vec2 projectorCentered =
+                    vUv - 0.5;
+                float cosine = cos(rotation);
+                float sine = sin(rotation);
+                vec2 rotatedCameraUv =
+                    vec2(
+                        cosine*cameraCentered.x -
+                            sine*cameraCentered.y,
+                        sine*cameraCentered.x +
+                            cosine*cameraCentered.y
+                    )/magnification + 0.5;
+                vec2 rotatedProjectorUv =
+                    vec2(
+                        cosine*projectorCentered.x -
+                            sine*projectorCentered.y,
+                        sine*projectorCentered.x +
+                            cosine*projectorCentered.y
+                    )/magnification + 0.5;
 
                 vec3 previous =
                     texture2D(
                         previousFrame,
-                        cameraUv
+                        rotatedCameraUv
                     ).rgb;
                 vec3 currentCoordinates =
                     textureMode > 0.5
-                        ? currentFrameTransform * vec3(vUv, 1.0)
-                        : vec3(cameraUv, 1.0);
+                        ? currentFrameTransform *
+                            vec3(rotatedProjectorUv, 1.0)
+                        : vec3(rotatedCameraUv, 1.0);
                 vec3 current =
                     texture2D(
                         currentFrame,
@@ -3199,6 +3249,15 @@ const baselineSlider =
 const baselineValue =
     document.getElementById("baselineValue");
 
+const projectionMagnificationSlider =
+    document.getElementById("projectionMagnification");
+const projectionMagnificationValue =
+    document.getElementById("projectionMagnificationValue");
+const projectionRotationSlider =
+    document.getElementById("projectionRotation");
+const projectionRotationValue =
+    document.getElementById("projectionRotationValue");
+
 const imageFactorControls =
     document.getElementById("imageFactorControls");
 imageFactorControls.hidden = !showImageFactors;
@@ -3221,6 +3280,38 @@ const frameRateSlider =
     document.getElementById("frameRate");
 const frameRateValue =
     document.getElementById("frameRateValue");
+
+function updateProjectionMagnification()
+{
+    const magnification =
+        Number(projectionMagnificationSlider.value);
+    projectionMagnificationValue.textContent =
+        `${magnification.toFixed(2)}×`;
+    projectionUniforms.magnification.value =
+        magnification;
+}
+
+projectionMagnificationSlider.addEventListener(
+    "input",
+    updateProjectionMagnification
+);
+updateProjectionMagnification();
+
+function updateProjectionRotation()
+{
+    const degrees =
+        Number(projectionRotationSlider.value);
+    projectionRotationValue.textContent =
+        `${degrees}°`;
+    projectionUniforms.rotation.value =
+        THREE.MathUtils.degToRad(degrees);
+}
+
+projectionRotationSlider.addEventListener(
+    "input",
+    updateProjectionRotation
+);
+updateProjectionRotation();
 
 projectorToggle.addEventListener(
     "change",
