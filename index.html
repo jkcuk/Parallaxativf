@@ -1701,9 +1701,9 @@ function createRandomTexture(seed)
     {
         state =
             (Math.imul(state,1664525) + 1013904223) >>> 0;
-        data[i] = state >>> 24;
-        data[i+1] = (state >>> 16) & 0xff;
-        data[i+2] = (state >>> 8) & 0xff;
+        data[i] = Math.floor((state >>> 24)*0.6);
+        data[i+1] = Math.floor(((state >>> 16) & 0xff)*0.6);
+        data[i+2] = Math.floor(((state >>> 8) & 0xff)*0.6);
         data[i+3] = 255;
     }
 
