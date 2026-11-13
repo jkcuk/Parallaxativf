@@ -211,6 +211,13 @@ canvas{
     pointer-events:auto;
 }
 
+#capturePreview canvas{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+}
+
 #capturePreview label{
     position:absolute;
     top:6px;
@@ -266,6 +273,22 @@ label{
     display:block;
     margin-bottom:6px;
 }
+
+.projectorSourceRow,
+#projectorTextureControls{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-wrap:wrap;
+}
+
+.projectorSourceRow label{
+    margin-bottom:0;
+}
+
+#projectorTextureControls[hidden]{
+    display:none;
+}
 </style>
 </head>
 
@@ -278,47 +301,47 @@ label{
                type="checkbox">
         Projector on
     </label>
-    <div class="editorActions" aria-label="Observer camera position">
-        <button id="viewFromCamera" type="button">View from camera</button>
-        <button id="viewFromProjector" type="button">View from projector</button>
-        <button id="resetObserverCamera" type="button">Reset observer view</button>
-    </div>
     <fieldset>
         <legend>Projector source</legend>
-        <label>
-            <input type="radio"
-                   name="projectorSource"
-                   value="camera"
-                   checked>
-            Camera image (video feedback)
-        </label>
-        <label>
-            <input type="radio"
-                   name="projectorSource"
-                   value="texture">
-            Texture
-        </label>
+        <div class="projectorSourceRow">
+            <!-- <label for="projectorSource">Source:</label> -->
+            <select id="projectorSource">
+                <option value="camera" selected>Camera image (video feedback)</option>
+                <option value="texture">Texture</option>
+            </select>
+            <div id="projectorTextureControls" hidden>
+                <!-- <label for="projectorTextureType">Texture:</label> -->
+                <select id="projectorTextureType">
+                    <option value="random">Random</option>
+                    <option value="checker">Checkerboard</option>
+                    <option value="stripes">Stripes</option>
+                    <option value="dots">Square dot grid</option>
+                    <option value="gradient">Gradient</option>
+                    <option value="image">Image file...</option>
+                    <option value="camera">Device camera</option>
+                </select>
+            </div>
+        </div>
+        <div id="projectorTextureExtraControls" hidden>
+            <input id="projectorTextureImageFile"
+                   type="file"
+                   accept="image/*"
+                   aria-label="Choose projector texture image"
+                   hidden>
+            <p id="projectorTextureStatus" aria-live="polite"></p>
+        </div>
     </fieldset>
-    <div id="projectorTextureControls" hidden>
-        <label for="projectorTextureType">Projector texture:</label>
-        <select id="projectorTextureType">
-            <option value="random">Random</option>
-            <option value="checker">Checkerboard</option>
-            <option value="stripes">Stripes</option>
-            <option value="dots">Square dot grid</option>
-            <option value="gradient">Gradient</option>
-            <option value="image">Image file...</option>
-            <option value="camera">Device camera</option>
-        </select>
-        <input id="projectorTextureImageFile"
-               type="file"
-               accept="image/*"
-               aria-label="Choose projector texture image"
-               hidden>
-        <p id="projectorTextureStatus" aria-live="polite">
-            Using random texture.
-        </p>
-    </div>
+    <label>
+        Camera-projector distance:
+        <input id="baseline"
+            type="range"
+            min="-4"
+            max="4"
+            value="2.0"
+            step="0.01">
+        <span id="baselineValue">2.00</span>
+    </label>
+
     <div id="cameraFeedbackControls">
         <label>
             Feedback frame delay:
@@ -330,37 +353,35 @@ label{
                    step="10">
             <span id="feedbackFrameDelayValue">0 ms</span>
         </label>
-        <label>
-            Previous image factor (a):
-            <input id="previousFactor"
-                   type="range"
-                   min="0"
-                   max="1"
-                   value="0.0"
-                   step="0.01">
-            <span id="previousFactorValue">0.00</span>
-        </label>
-        <label>
-            Current image factor (b):
-            <input id="currentFactor"
-                   type="range"
-                   min="0"
-                   max="1"
-                   value="1.0"
-                   step="0.01">
-            <span id="currentFactorValue">1.00</span>
-        </label>
+        <div id="imageFactorControls" hidden>
+            <label>
+                Previous image factor (a):
+                <input id="previousFactor"
+                       type="range"
+                       min="0"
+                       max="1"
+                       value="0.0"
+                       step="0.01">
+                <span id="previousFactorValue">0.00</span>
+            </label>
+            <label>
+                Current image factor (b):
+                <input id="currentFactor"
+                       type="range"
+                       min="0"
+                       max="1"
+                       value="1.0"
+                       step="0.01">
+                <span id="currentFactorValue">1.00</span>
+            </label>
+        </div>
     </div>
-    <label>
-        Baseline:
-        <input id="baseline"
-               type="range"
-               min="-4"
-               max="4"
-               value="2.0"
-               step="0.01">
-        <span id="baselineValue">2.00</span>
-    </label>
+    <div class="editorActions" aria-label="Observer camera position">
+        <button id="viewFromCamera" type="button">View from camera</button>
+        <button id="viewFromProjector" type="button">View from projector</button>
+        <button id="resetObserverCamera" type="button">Reset observer view</button>
+    </div>
+
     <!-- <button id="resetFeedback" type="button">Re-project initial noise</button> -->
 </details>
 
@@ -386,30 +407,12 @@ label{
         <button type="button" data-transform-mode="rotate" aria-pressed="false">Rotate</button>
         <button type="button" data-transform-mode="scale" aria-pressed="false">Scale</button>
     </div>
-    <div id="imagePanelEditor" hidden>
-        <label for="leftTextureType">Image panel texture:</label>
-        <select id="leftTextureType">
-            <option value="random">Random</option>
-            <option value="checker">Checkerboard</option>
-            <option value="stripes">Stripes</option>
-            <option value="dots">Square dot grid</option>
-            <option value="gradient">Gradient</option>
-            <option value="image">Image file...</option>
-            <option value="camera">Device camera</option>
-        </select>
-        <input id="textureImageFile"
-               type="file"
-               accept="image/*"
-               aria-label="Choose image panel texture"
-               hidden>
-        <p id="textureStatus" aria-live="polite">Using random texture.</p>
-        <div class="transformRow">
-            <span>Position</span>
-            <input data-panel-position="x" type="number" step="0.1" aria-label="Image panel position X">
-            <input data-panel-position="y" type="number" step="0.1" aria-label="Image panel position Y">
-            <input data-panel-position="z" type="number" step="0.1" aria-label="Image panel position Z">
-        </div>
-    </div>
+    <!-- <div class="transformRow">
+        <span>Position</span>
+        <input data-panel-position="x" type="number" step="0.1" aria-label="Image panel position X">
+        <input data-panel-position="y" type="number" step="0.1" aria-label="Image panel position Y">
+        <input data-panel-position="z" type="number" step="0.1" aria-label="Image panel position Z">
+    </div> -->
     <div class="transformRow" id="transformPositionRow">
         <span>Position</span>
         <input data-transform="position" data-axis="x" type="number" step="0.1" aria-label="Position X">
@@ -429,6 +432,28 @@ label{
         <input data-transform="scale" data-axis="z" type="number" min="0.01" step="0.1" aria-label="Scale Z">
     </div>
     <p id="editorHint" aria-live="polite">Select an object to edit it.</p>
+        <div id="imagePanelEditor" hidden>
+        <fieldset>
+            <legend>Texture</legend>
+            <!-- <label for="leftTextureType">Texture</label> -->
+            <select id="leftTextureType">
+                <option value="random">Random</option>
+                <option value="checker">Checkerboard</option>
+                <option value="stripes">Stripes</option>
+                <option value="dots">Square dot grid</option>
+                <option value="gradient">Gradient</option>
+                <option value="image">Image file...</option>
+                <option value="camera">Device camera</option>
+            </select>
+            <input id="textureImageFile"
+                type="file"
+                accept="image/*"
+                aria-label="Choose image panel texture"
+                hidden>
+            <p id="textureStatus" aria-live="polite">Using random texture.</p>
+        </fieldset>
+    </div>
+
 </details>
 
 <div id="capturePreview"
@@ -450,6 +475,8 @@ import * as THREE from "three";
 import {OrbitControls} from "three/addons/controls/OrbitControls.js";
 import {TransformControls} from "three/addons/controls/TransformControls.js";
 
+const showImageFactors = false;
+
 ///////////////////////////////////////////////////////////////////////////
 // renderer
 ///////////////////////////////////////////////////////////////////////////
@@ -465,6 +492,16 @@ renderer.setSize(
 );
 
 document.body.appendChild(renderer.domElement);
+
+const capturePreviewElement =
+    document.getElementById("capturePreview");
+const previewRenderer = new THREE.WebGLRenderer({
+    antialias:true
+});
+previewRenderer.setSize(1, 1, false);
+capturePreviewElement.appendChild(previewRenderer.domElement);
+let previewRendererWidth = 1;
+let previewRendererHeight = 1;
 
 const imageContextMenu =
     document.getElementById("imageContextMenu");
@@ -2082,7 +2119,7 @@ async function selectProjectorTexture()
     if(textureType === "random")
     {
         setProjectorTexture(createRandomTexture(0x2468ace0));
-        projectorTextureStatus.textContent = "Using random texture.";
+        projectorTextureStatus.textContent = "";
         return;
     }
 
@@ -2243,8 +2280,10 @@ const sceneObjectsList =
 const editableObjectRows = new Map();
 const projectorToggle =
     document.getElementById("projectorEnabled");
-const projectorSourceInputs =
-    [...document.querySelectorAll('input[name="projectorSource"]')];
+const projectorSourceSelect =
+    document.getElementById("projectorSource");
+const projectorTextureExtraControls =
+    document.getElementById("projectorTextureExtraControls");
 const cameraFeedbackControls =
     document.getElementById("cameraFeedbackControls");
 const editorHint =
@@ -2381,7 +2420,7 @@ function selectEditableObject(object)
     );
     const isimagePanel = object === texturedObject;
     imagePanelEditor.hidden = !isimagePanel;
-    document.getElementById("transformPositionRow").hidden = isimagePanel;
+    // document.getElementById("transformPositionRow").hidden = isimagePanel;
 
     if(object)
     {
@@ -2786,6 +2825,10 @@ const baselineSlider =
 const baselineValue =
     document.getElementById("baselineValue");
 
+const imageFactorControls =
+    document.getElementById("imageFactorControls");
+imageFactorControls.hidden = !showImageFactors;
+
 const previousFactorSlider =
     document.getElementById("previousFactor");
 
@@ -2808,20 +2851,20 @@ projectorToggle.addEventListener(
     () => setProjectorEnabled(projectorToggle.checked)
 );
 
-projectorSourceInputs.forEach(
-    input => input.addEventListener(
-        "change",
-        () =>
-        {
-            const isCameraSource =
-                input.checked && input.value === "camera";
-            cameraFeedbackControls.hidden = !isCameraSource;
-            projectorTextureControls.hidden =
-                !input.checked || input.value !== "texture";
-            lastFeedbackFrameTime = null;
-        }
-    )
+function updateProjectorSourceControls()
+{
+    const isCameraSource = projectorSourceSelect.value === "camera";
+    cameraFeedbackControls.hidden = !isCameraSource;
+    projectorTextureControls.hidden = isCameraSource;
+    projectorTextureExtraControls.hidden = isCameraSource;
+    lastFeedbackFrameTime = null;
+}
+
+projectorSourceSelect.addEventListener(
+    "change",
+    updateProjectorSourceControls
 );
+updateProjectorSourceControls();
 
 // const resetFeedbackButton =
 //     document.getElementById("resetFeedback");
@@ -3109,8 +3152,7 @@ function animate(timestamp)
         lastFeedbackFrameTime = timestamp;
 
         const usePanelTexture =
-            projectorSourceInputs.find(input => input.checked)?.value ===
-                "texture";
+            projectorSourceSelect.value === "texture";
         if(usePanelTexture)
         {
             const sourceTexture = projectorTexture;
@@ -3179,7 +3221,6 @@ function animate(timestamp)
     }
 
     renderer.setRenderTarget(null);
-    renderer.setScissorTest(false);
     renderer.setViewport(
         0,
         0,
@@ -3208,14 +3249,15 @@ function animate(timestamp)
 
     const previewBounds =
         capturePreview.getBoundingClientRect();
-    const previewX =
-        previewBounds.left + 2;
-    const previewY =
-        window.innerHeight - previewBounds.bottom + 2;
-    const previewWidth =
-        previewBounds.width - 4;
-    const previewHeight =
-        previewBounds.height - 4;
+    const previewWidth = Math.max(1, Math.round(previewBounds.width - 4));
+    const previewHeight = Math.max(1, Math.round(previewBounds.height - 4));
+    if(previewWidth !== previewRendererWidth ||
+        previewHeight !== previewRendererHeight)
+    {
+        previewRenderer.setSize(previewWidth, previewHeight, false);
+        previewRendererWidth = previewWidth;
+        previewRendererHeight = previewHeight;
+    }
 
     if(captureIsMain)
     {
@@ -3234,21 +3276,7 @@ function animate(timestamp)
         capturePreviewCamera.updateProjectionMatrix();
     }
 
-    renderer.setScissorTest(true);
-    renderer.setViewport(
-        previewX,
-        previewY,
-        previewWidth,
-        previewHeight
-    );
-    renderer.setScissor(
-        previewX,
-        previewY,
-        previewWidth,
-        previewHeight
-    );
-    renderer.render(scene, previewCamera);
-    renderer.setScissorTest(false);
+    previewRenderer.render(scene, previewCamera);
 
     controls.update();
 }
