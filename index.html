@@ -495,11 +495,28 @@ document.body.appendChild(renderer.domElement);
 
 const capturePreviewElement =
     document.getElementById("capturePreview");
-const previewRenderer = new THREE.WebGLRenderer({
-    antialias:true
-});
-previewRenderer.setSize(1, 1, false);
-capturePreviewElement.appendChild(previewRenderer.domElement);
+const previewCanvas = document.createElement("canvas");
+capturePreviewElement.appendChild(previewCanvas);
+const previewContext = previewCanvas.getContext("2d");
+if(!previewContext)
+{
+    throw new Error("Could not initialize the camera preview.");
+}
+const previewRenderTarget =
+    new THREE.WebGLRenderTarget(1, 1);
+previewRenderTarget.texture.colorSpace =
+    renderer.outputColorSpace;
+const linearToSrgbBytes = new Uint8Array(256);
+for(let value = 0; value < linearToSrgbBytes.length; value++)
+{
+    const linear = value/255;
+    const srgb = linear <= 0.0031308
+        ? linear*12.92
+        : 1.055*Math.pow(linear, 1/2.4) - 0.055;
+    linearToSrgbBytes[value] = Math.round(srgb*255);
+}
+let previewPixels = new Uint8Array(4);
+let previewImageData = previewContext.createImageData(1, 1);
 let previewRendererWidth = 1;
 let previewRendererHeight = 1;
 
@@ -1183,6 +1200,8 @@ function createFeedbackMaterial(side = THREE.FrontSide)
                 } else {
                     gl_FragColor = texture2D(feedbackTex, uv);
                 }
+
+                #include <colorspace_fragment>
             }
         `
     });
@@ -3249,12 +3268,23 @@ function animate(timestamp)
 
     const previewBounds =
         capturePreview.getBoundingClientRect();
-    const previewWidth = Math.max(1, Math.round(previewBounds.width - 4));
-    const previewHeight = Math.max(1, Math.round(previewBounds.height - 4));
+    const previewWidth = Math.max(
+        1,
+        Math.round((previewBounds.width - 4)*window.devicePixelRatio)
+    );
+    const previewHeight = Math.max(
+        1,
+        Math.round((previewBounds.height - 4)*window.devicePixelRatio)
+    );
     if(previewWidth !== previewRendererWidth ||
         previewHeight !== previewRendererHeight)
     {
-        previewRenderer.setSize(previewWidth, previewHeight, false);
+        previewCanvas.width = previewWidth;
+        previewCanvas.height = previewHeight;
+        previewRenderTarget.setSize(previewWidth, previewHeight);
+        previewPixels = new Uint8Array(previewWidth*previewHeight*4);
+        previewImageData =
+            previewContext.createImageData(previewWidth, previewHeight);
         previewRendererWidth = previewWidth;
         previewRendererHeight = previewHeight;
     }
@@ -3276,7 +3306,51 @@ function animate(timestamp)
         capturePreviewCamera.updateProjectionMatrix();
     }
 
-    previewRenderer.render(scene, previewCamera);
+    renderer.setRenderTarget(previewRenderTarget);
+    renderer.setViewport(0, 0, previewWidth, previewHeight);
+    renderer.render(scene, previewCamera);
+    renderer.readRenderTargetPixels(
+        previewRenderTarget,
+        0,
+        0,
+        previewWidth,
+        previewHeight,
+        previewPixels
+    );
+    const previewRowSize = previewWidth*4;
+    for(let row = 0; row < previewHeight; row++)
+    {
+        const sourceStart =
+            (previewHeight - row - 1)*previewRowSize;
+        const targetStart = row*previewRowSize;
+        previewImageData.data.set(
+            previewPixels.subarray(
+                sourceStart,
+                sourceStart + previewRowSize
+            ),
+            targetStart
+        );
+        for(let pixel = targetStart;
+            pixel < targetStart + previewRowSize;
+            pixel += 4)
+        {
+            previewImageData.data[pixel] =
+                linearToSrgbBytes[previewImageData.data[pixel]];
+            previewImageData.data[pixel + 1] =
+                linearToSrgbBytes[previewImageData.data[pixel + 1]];
+            previewImageData.data[pixel + 2] =
+                linearToSrgbBytes[previewImageData.data[pixel + 2]];
+        }
+    }
+    previewContext.putImageData(previewImageData, 0, 0);
+
+    renderer.setRenderTarget(null);
+    renderer.setViewport(
+        0,
+        0,
+        window.innerWidth,
+        window.innerHeight
+    );
 
     controls.update();
 }
