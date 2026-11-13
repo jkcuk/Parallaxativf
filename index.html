@@ -46,45 +46,6 @@ canvas{
     font-weight:bold;
 }
 
-#ui > summary,
-#sceneEditor > summary{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:12px;
-}
-
-.panelDragHandle{
-    flex:none;
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    width:26px;
-    height:26px;
-    border:1px solid #999;
-    border-radius:4px;
-    color:#444;
-    background:rgba(255,255,255,0.65);
-    cursor:grab;
-    touch-action:none;
-    user-select:none;
-}
-
-.panelDragHandle svg{
-    width:18px;
-    height:18px;
-    fill:currentColor;
-}
-
-.panelDragHandle:active{
-    cursor:grabbing;
-}
-
-.panelDragHandle:focus-visible{
-    outline:2px solid #2459a6;
-    outline-offset:2px;
-}
-
 #ui > summary{
     min-width:150px;
 }
@@ -301,18 +262,8 @@ label{
 <body>
 
 <details id="ui" open>
-    <summary>
-        <span>Experiment controls</span>
-        <span class="panelDragHandle"
-              data-drag-panel="ui"
-              role="button"
-              tabindex="0"
-              aria-label="Move experiment controls"
-              title="Drag to move">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path d="M12 2 8.5 5.5h2v5h-5v-2L2 12l3.5 3.5v-2h5v5h-2L12 22l3.5-3.5h-2v-5h5v2L22 12l-3.5-3.5v2h-5v-5h2z"/>
-            </svg>
-        </span>
+    <summary title="Click to collapse or expand. Hold briefly and drag to move.">
+        Experiment controls
     </summary>
     <label>
         <input id="projectorEnabled"
@@ -404,18 +355,8 @@ label{
 </details>
 
 <details id="sceneEditor" open>
-    <summary>
-        <span>Scene editor</span>
-        <span class="panelDragHandle"
-              data-drag-panel="sceneEditor"
-              role="button"
-              tabindex="0"
-              aria-label="Move scene editor"
-              title="Drag to move">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path d="M12 2 8.5 5.5h2v5h-5v-2L2 12l3.5 3.5v-2h5v5h-2L12 22l3.5-3.5h-2v-5h5v2L22 12l-3.5-3.5v2h-5v-5h2z"/>
-            </svg>
-        </span>
+    <summary title="Click to collapse or expand. Hold briefly and drag to move.">
+        Scene editor
     </summary>
     <div class="editorActions">
         <select id="newObjectType" aria-label="New object type">
@@ -525,83 +466,104 @@ function positionControlPanel(panel, left, top)
     panel.style.right = "auto";
 }
 
-document.querySelectorAll("[data-drag-panel]").forEach(handle =>
+document.querySelectorAll("#ui, #sceneEditor").forEach(panel =>
 {
-    const panel =
-        document.getElementById(handle.dataset.dragPanel);
-    let drag = null;
+    const summary = panel.querySelector(":scope > summary");
+    let press = null;
 
-    handle.addEventListener("pointerdown", event =>
+    summary.addEventListener("pointerdown", event =>
     {
         if(event.button !== 0)
         {
             return;
         }
 
-        event.preventDefault();
-        event.stopPropagation();
         const bounds = panel.getBoundingClientRect();
-        drag = {
+        const nextPress = {
             pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
             offsetX: event.clientX - bounds.left,
-            offsetY: event.clientY - bounds.top
+            offsetY: event.clientY - bounds.top,
+            dragReady: false,
+            dragging: false,
+            timer: null
         };
-        handle.setPointerCapture(event.pointerId);
-    });
-
-    handle.addEventListener("click", event =>
-    {
-        event.preventDefault();
-        event.stopPropagation();
-    });
-
-    handle.addEventListener("pointermove", event =>
-    {
-        if(drag?.pointerId !== event.pointerId)
-        {
-            return;
-        }
-        positionControlPanel(
-            panel,
-            event.clientX - drag.offsetX,
-            event.clientY - drag.offsetY
+        press = nextPress;
+        summary.setPointerCapture(event.pointerId);
+        nextPress.timer = window.setTimeout(
+            () =>
+            {
+                if(press === nextPress)
+                {
+                    nextPress.dragReady = true;
+                }
+            },
+            250
         );
     });
 
-    const finishDrag = event =>
+    summary.addEventListener("pointermove", event =>
     {
-        if(drag?.pointerId === event.pointerId)
-        {
-            drag = null;
-        }
-    };
-    handle.addEventListener("pointerup", finishDrag);
-    handle.addEventListener("pointercancel", finishDrag);
-    handle.addEventListener("lostpointercapture", finishDrag);
-
-    handle.addEventListener("keydown", event =>
-    {
-        const step = event.shiftKey ? 50 : 10;
-        const offsets = {
-            ArrowLeft: [-step, 0],
-            ArrowRight: [step, 0],
-            ArrowUp: [0, -step],
-            ArrowDown: [0, step]
-        };
-        const offset = offsets[event.key];
-        if(!offset)
+        if(press?.pointerId !== event.pointerId)
         {
             return;
         }
 
+        const distance = Math.hypot(
+            event.clientX - press.startX,
+            event.clientY - press.startY
+        );
+        if(!press.dragReady)
+        {
+            if(distance > 6)
+            {
+                window.clearTimeout(press.timer);
+                press = null;
+            }
+            return;
+        }
+
+        if(distance <= 4)
+        {
+            return;
+        }
+
+        press.dragging = true;
         event.preventDefault();
-        event.stopPropagation();
-        const bounds = panel.getBoundingClientRect();
         positionControlPanel(
             panel,
-            bounds.left + offset[0],
-            bounds.top + offset[1]
+            event.clientX - press.offsetX,
+            event.clientY - press.offsetY
         );
+    });
+
+    summary.addEventListener("pointerup", event =>
+    {
+        if(press?.pointerId !== event.pointerId)
+        {
+            return;
+        }
+
+        window.clearTimeout(press.timer);
+        window.setTimeout(() => press = null, 0);
+    });
+
+    summary.addEventListener("pointercancel", event =>
+    {
+        if(press?.pointerId === event.pointerId)
+        {
+            window.clearTimeout(press.timer);
+            press = null;
+        }
+    });
+
+    summary.addEventListener("click", event =>
+    {
+        if(press?.dragging)
+        {
+            event.preventDefault();
+        }
     });
 });
 
