@@ -1006,6 +1006,60 @@ const projectorClipMatrix =
     new THREE.Matrix4();
 const keystonePlaneZ = 10;
 
+function updateCaptureCameraCoverage()
+{
+    // Fit the projector's full reference-plane footprint into the capture view.
+    captureCamera.updateProjectionMatrix();
+    captureCamera.updateMatrixWorld(true);
+    projector.updateMatrixWorld(true);
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    const corner = new THREE.Vector3();
+    const direction = new THREE.Vector3();
+    const planePoint = new THREE.Vector3();
+
+    for(const x of [-1, 1])
+    {
+        for(const y of [-1, 1])
+        {
+            corner.set(x, y, 0.5).unproject(projector);
+            direction.subVectors(corner, projector.position);
+            const distance =
+                (keystonePlaneZ - projector.position.z)/direction.z;
+            planePoint.copy(projector.position)
+                .addScaledVector(direction, distance)
+                .project(captureCamera);
+
+            minX = Math.min(minX, planePoint.x);
+            maxX = Math.max(maxX, planePoint.x);
+            minY = Math.min(minY, planePoint.y);
+            maxY = Math.max(maxY, planePoint.y);
+        }
+    }
+
+    const centerX = (minX + maxX)*0.5;
+    const centerY = (minY + maxY)*0.5;
+    const halfWidth = (maxX - minX)*0.5;
+    const halfHeight = (maxY - minY)*0.5;
+    const scale =
+        0.98/Math.max(halfWidth, halfHeight);
+    const offsetX = -centerX*scale;
+    const offsetY = -centerY*scale;
+    const elements = captureCamera.projectionMatrix.elements;
+
+    elements[0] *= scale;
+    elements[8] = elements[8]*scale - offsetX;
+    elements[5] *= scale;
+    elements[9] = elements[9]*scale - offsetY;
+    captureCamera.projectionMatrixInverse
+        .copy(captureCamera.projectionMatrix)
+        .invert();
+    captureCamera.updateMatrixWorld(true);
+}
+
 function updateCameraKeystoneTransform()
 {
     captureCamera.updateMatrixWorld(true);
@@ -3009,7 +3063,6 @@ function updateBaseline()
         0,
         zA
     );
-    updateAutostereogramFrame();
 
     // texturedObject.position.x =
     //     texturedObject.userData.manuallyPositioned
@@ -3026,6 +3079,9 @@ function updateBaseline()
         0,
         zA
     );
+    projector.updateMatrixWorld(true);
+    updateCaptureCameraCoverage();
+    updateAutostereogramFrame();
 
     cameraMarker.position.copy(
         captureCamera.position
@@ -3040,7 +3096,6 @@ function updateBaseline()
     projectorLabel.position.copy(projectorMarker.position);
     projectorLabel.position.y += 0.35;
 
-    projector.updateMatrixWorld();
     uniforms.projectorViewMatrix.value.copy(
         projector.matrixWorldInverse
     );
@@ -3249,9 +3304,10 @@ function animate(timestamp)
 
     captureDisplayCamera.position.copy(captureCamera.position);
     captureDisplayCamera.quaternion.copy(captureCamera.quaternion);
-    captureDisplayCamera.aspect =
-        window.innerWidth/window.innerHeight;
-    captureDisplayCamera.updateProjectionMatrix();
+    captureDisplayCamera.projectionMatrix
+        .copy(captureCamera.projectionMatrix);
+    captureDisplayCamera.projectionMatrixInverse
+        .copy(captureCamera.projectionMatrixInverse);
 
     const mainCamera =
         captureIsMain ? captureDisplayCamera : observerCamera;
@@ -3374,10 +3430,10 @@ window.addEventListener(
 
         captureCamera.aspect = aspect;
         captureCamera.updateProjectionMatrix();
-        updateAutostereogramFrame();
 
         projector.aspect = aspect;
         projector.updateProjectionMatrix();
+        updateBaseline();
 
         const targetSize =
             getFeedbackTargetSize();
