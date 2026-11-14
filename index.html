@@ -1002,6 +1002,8 @@ const projector =
         100
     );
 
+const projectorOccluderLayer = 1;
+projector.layers.set(projectorOccluderLayer);
 projector.position.set(-0.5,0,0);
 
 ///////////////////////////////////////////////////////////////////////////
@@ -1114,6 +1116,33 @@ const projectedTarget =
        feedbackTargetSize.height
    );
 
+const projectorVisibilityTarget =
+    new THREE.WebGLRenderTarget(
+        feedbackTargetSize.width,
+        feedbackTargetSize.height,
+        {
+            depthBuffer:true,
+            stencilBuffer:false
+        }
+    );
+projectorVisibilityTarget.depthTexture =
+    new THREE.DepthTexture(
+        feedbackTargetSize.width,
+        feedbackTargetSize.height,
+        THREE.UnsignedIntType
+    );
+projectorVisibilityTarget.depthTexture.format =
+    THREE.DepthFormat;
+projectorVisibilityTarget.depthTexture.magFilter =
+    THREE.NearestFilter;
+projectorVisibilityTarget.depthTexture.minFilter =
+    THREE.NearestFilter;
+projectorVisibilityTarget.depthTexture.generateMipmaps = false;
+const projectorVisibilityTexelSize =
+    new THREE.Vector2(
+        1/feedbackTargetSize.width,
+        1/feedbackTargetSize.height
+    );
 for(const target of [
     previousCameraTarget,
     currentCameraTarget,
@@ -1610,6 +1639,14 @@ projectionScene.add(
 const projectionCamera =
     new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
+const projectorVisibilityMaterial =
+    new THREE.MeshBasicMaterial({
+        color:0xffffff,
+        side:THREE.DoubleSide,
+        depthTest:true,
+        depthWrite:true
+    });
+
 ///////////////////////////////////////////////////////////////////////////
 // shader
 ///////////////////////////////////////////////////////////////////////////
@@ -1623,7 +1660,14 @@ const uniforms = {
 
     cameraImageLinear : cameraImageLinearUniform,
     feedbackTexelSize : feedbackTexelSizeUniform,
-
+    projectorVisibilityTex :
+    {
+        value : projectorVisibilityTarget.depthTexture
+    },
+    projectorVisibilityTexelSize :
+    {
+        value : projectorVisibilityTexelSize
+    },
     projectorViewMatrix :
     {
         value : new THREE.Matrix4()
@@ -1665,6 +1709,8 @@ function createFeedbackMaterial(side = THREE.FrontSide)
         fragmentShader:`
 
             uniform sampler2D feedbackTex;
+            uniform sampler2D projectorVisibilityTex;
+            uniform vec2 projectorVisibilityTexelSize;
             uniform float cameraImageLinear;
             uniform vec2 feedbackTexelSize;
             uniform mat4 projectorViewMatrix;
@@ -1710,6 +1756,30 @@ function createFeedbackMaterial(side = THREE.FrontSide)
                 return mix(top, bottom, fraction.y);
             }
 
+            float sampleNearestSurfaceDepth(vec2 uv)
+            {
+                vec2 baseTexel =
+                    floor(uv/projectorVisibilityTexelSize) + 0.5;
+                float depth = 0.0;
+                for(int y = -1; y <= 1; y++)
+                {
+                    for(int x = -1; x <= 1; x++)
+                    {
+                        vec2 sampleUv =
+                            (baseTexel + vec2(float(x), float(y))) *
+                            projectorVisibilityTexelSize;
+                        depth = max(
+                            depth,
+                            texture2D(
+                                projectorVisibilityTex,
+                                sampleUv
+                            ).x
+                        );
+                    }
+                }
+                return depth;
+            }
+
             void main()
             {
                 vec4 projectorClip =
@@ -1722,6 +1792,11 @@ function createFeedbackMaterial(side = THREE.FrontSide)
                     max(projectorClip.w, 0.00001) *
                     0.5 +
                     0.5;
+                float projectorDepth =
+                    projectorClip.z /
+                        max(projectorClip.w, 0.00001) *
+                    0.5 +
+                    0.5;
 
                 if(
                     projectorClip.w <= 0.0 ||
@@ -1731,8 +1806,21 @@ function createFeedbackMaterial(side = THREE.FrontSide)
                     uv.y > 1.0
                 ){
                     gl_FragColor = vec4(0.015, 0.015, 0.015, 1.0);
-                } else {
-                    gl_FragColor = sampleFeedback(uv);
+                }
+                else
+                {
+                    float nearestSurfaceDepth =
+                        sampleNearestSurfaceDepth(uv);
+                    if(projectorDepth >
+                        nearestSurfaceDepth + 0.00001)
+                    {
+                        gl_FragColor =
+                            vec4(0.015, 0.015, 0.015, 1.0);
+                    }
+                    else
+                    {
+                        gl_FragColor = sampleFeedback(uv);
+                    }
                 }
 
                 #include <colorspace_fragment>
@@ -1749,6 +1837,7 @@ const projectorObjects = new Set();
 
 function registerProjectorObject(object)
 {
+    object.layers.enable(projectorOccluderLayer);
     const onMaterial = object.material;
     const offMaterial =
         new THREE.MeshPhongMaterial({
@@ -1764,6 +1853,40 @@ function registerProjectorObject(object)
     if(!projectorOn)
     {
         object.material = offMaterial;
+    }
+}
+
+function renderProjectorVisibility()
+{
+    const previousRenderTarget = renderer.getRenderTarget();
+    const previousOverrideMaterial = scene.overrideMaterial;
+    const previousBackground = scene.background;
+    const previousClearColor =
+        renderer.getClearColor(new THREE.Color()).clone();
+    const previousClearAlpha = renderer.getClearAlpha();
+    const previousAutoClear = renderer.autoClear;
+
+    try
+    {
+        projector.updateMatrixWorld(true);
+        scene.overrideMaterial = projectorVisibilityMaterial;
+        scene.background = null;
+        renderer.autoClear = false;
+        renderer.setClearColor(0xffffff, 1);
+        renderer.setRenderTarget(projectorVisibilityTarget);
+        renderer.clear(true, true, true);
+        renderer.render(scene, projector);
+    }
+    finally
+    {
+        scene.overrideMaterial = previousOverrideMaterial;
+        scene.background = previousBackground;
+        renderer.setClearColor(
+            previousClearColor,
+            previousClearAlpha
+        );
+        renderer.autoClear = previousAutoClear;
+        renderer.setRenderTarget(previousRenderTarget);
     }
 }
 
@@ -2268,7 +2391,7 @@ const objectTextureMaterial =
     });
 
 const panelHeight =
-    3 * zA * Math.tan(
+    5 * zA * Math.tan(
         THREE.MathUtils.degToRad(captureCamera.fov * 0.5)
     );
 const panelWidth = panelHeight * captureCamera.aspect * 0.5;
@@ -2307,9 +2430,10 @@ texturedObject.visible = true;
 texturedObject.position.set(
     panelWidth*0.5,
     0,
-    zA+5
+    29
 );
 scene.add(texturedObject);
+texturedObject.layers.enable(projectorOccluderLayer);
 
 const leftTextureSelect =
     document.getElementById("leftTextureType");
@@ -3881,6 +4005,7 @@ function animate(timestamp)
             projectionUniforms.textureMode.value = 0;
         }
 
+        renderProjectorVisibility();
         updateCameraKeystoneTransform();
         renderer.setRenderTarget(projectedTarget);
         renderer.clear();
@@ -3964,11 +4089,18 @@ window.addEventListener(
             targetSize.width,
             targetSize.height
         );
+        projectorVisibilityTarget.setSize(
+            targetSize.width,
+            targetSize.height
+        );
+        projectorVisibilityTexelSize.set(
+            1/targetSize.width,
+            1/targetSize.height
+        );
         feedbackTexelSizeUniform.value.set(
             1/targetSize.width,
             1/targetSize.height
         );
-
         renderer.setSize(
             window.innerWidth,
             window.innerHeight
