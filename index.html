@@ -2228,6 +2228,8 @@ plane.position.z = 30;
 scene.add(plane);
 registerProjectorObject(plane);
 
+// Image panel
+
 function createRandomTexture(seed)
 {
     const size = 256;
@@ -2266,7 +2268,7 @@ const objectTextureMaterial =
     });
 
 const panelHeight =
-    2 * zA * Math.tan(
+    3 * zA * Math.tan(
         THREE.MathUtils.degToRad(captureCamera.fov * 0.5)
     );
 const panelWidth = panelHeight * captureCamera.aspect * 0.5;
@@ -2305,7 +2307,7 @@ texturedObject.visible = true;
 texturedObject.position.set(
     panelWidth*0.5,
     0,
-    zA
+    zA+5
 );
 scene.add(texturedObject);
 
