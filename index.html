@@ -1380,6 +1380,9 @@ const projectionUniforms = {
     },
     currentFactor: {
         value: 1
+    },
+    aspect: {
+        value: projectedTarget.width/projectedTarget.height
     }
 };
 
@@ -1531,6 +1534,7 @@ const projectionMaterial =
             uniform float rotation;
             uniform float previousFactor;
             uniform float currentFactor;
+            uniform float aspect;
 
             varying vec2 vUv;
 
@@ -1583,20 +1587,49 @@ const projectionMaterial =
                     vUv - 0.5;
                 float cosine = cos(rotation);
                 float sine = sin(rotation);
-                vec2 rotatedCameraUv =
+                vec2 p = cameraUv - 0.5;
+
+                // convert into isotropic coordinates
+                cameraCentered.x *= aspect;
+                projectorCentered.x *= aspect;
+
+                vec2 q =
                     vec2(
-                        cosine*cameraCentered.x -
-                            sine*cameraCentered.y,
-                        sine*cameraCentered.x +
-                            cosine*cameraCentered.y
-                    )/magnification + 0.5;
-                vec2 rotatedProjectorUv =
+                        cosine*cameraCentered.x - sine*cameraCentered.y,
+                        sine*cameraCentered.x + cosine*cameraCentered.y
+                    ) / magnification;
+
+                // back to UV coordinates
+                q.x /= aspect;
+
+                vec2 rotatedCameraUv = q + 0.5;
+
+                // vec2 rotatedCameraUv =
+                //     vec2(
+                //         cosine*cameraCentered.x -
+                //             sine*cameraCentered.y,
+                //         sine*cameraCentered.x +
+                //             cosine*cameraCentered.y
+                //     )/magnification + 0.5;
+
+                q =
                     vec2(
-                        cosine*projectorCentered.x -
-                            sine*projectorCentered.y,
-                        sine*projectorCentered.x +
-                            cosine*projectorCentered.y
-                    )/magnification + 0.5;
+                        cosine*projectorCentered.x - sine*projectorCentered.y,
+                        sine*projectorCentered.x + cosine*projectorCentered.y
+                    ) / magnification;
+
+                // back to UV coordinates
+                q.x /= aspect;
+
+                vec2 rotatedProjectorUv = q + 0.5;
+
+                // vec2 rotatedProjectorUv =
+                //     vec2(
+                //         cosine*projectorCentered.x -
+                //             sine*projectorCentered.y,
+                //         sine*projectorCentered.x +
+                //             cosine*projectorCentered.y
+                //     )/magnification + 0.5;
 
                 vec3 previous =
                     sampleCameraFrame(
